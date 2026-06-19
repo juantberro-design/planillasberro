@@ -7,15 +7,22 @@ const AuthContext = createContext(null)
 
 export function AuthProvider({ children }) {
   const [usuario, setUsuario] = useState(null)
-  const [cargando, setCargando] = useState(true)
+  const [cargando, setCargando] = useState(false)
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
+      console.log('Auth state changed:', firebaseUser?.uid)
       if (firebaseUser) {
-        const snap = await getDoc(doc(db, 'usuarios', firebaseUser.uid))
-        if (snap.exists()) {
-          setUsuario({ uid: firebaseUser.uid, ...snap.data() })
-        } else {
+        try {
+          const snap = await getDoc(doc(db, 'usuarios', firebaseUser.uid))
+          console.log('Doc existe:', snap.exists())
+          if (snap.exists() && snap.data().activo) {
+            setUsuario({ uid: firebaseUser.uid, ...snap.data() })
+          } else {
+            setUsuario(null)
+          }
+        } catch(e) {
+          console.log('Error:', e)
           setUsuario(null)
         }
       } else {

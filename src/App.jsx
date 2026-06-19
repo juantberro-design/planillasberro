@@ -5,11 +5,12 @@ import Dashboard from './pages/Dashboard'
 import Planilla from './pages/Planilla'
 import Pallets from './pages/Pallets'
 import Admin from './pages/Admin'
+import Informes from './pages/Informes'
 import Layout from './components/Layout'
 
 function PrivateRoute({ children, roles }) {
   const { usuario, cargando } = useAuth()
-  if (cargando) return <div className="loading">Cargando...</div>
+  if (cargando) return null
   if (!usuario) return <Navigate to="/login" />
   if (roles && !roles.includes(usuario.rol)) return <Navigate to="/" />
   return children
@@ -27,7 +28,16 @@ export default function App() {
         }>
           <Route index element={<Dashboard />} />
           <Route path="planilla/:fecha/:choferId" element={<Planilla />} />
-          <Route path="pallets" element={<Pallets />} />
+          <Route path="pallets" element={
+            <PrivateRoute roles={['admin','operador']}>
+              <Pallets />
+            </PrivateRoute>
+          } />
+          <Route path="informes" element={
+            <PrivateRoute roles={['admin','operador']}>
+              <Informes />
+            </PrivateRoute>
+          } />
           <Route path="admin" element={
             <PrivateRoute roles={['admin']}>
               <Admin />

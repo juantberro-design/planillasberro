@@ -1,271 +1,501 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useRef, useCallback, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'
+import { doc, getDoc, setDoc, addDoc, serverTimestamp, collection, getDocs, increment } from 'firebase/firestore'
 import { db } from '../firebase'
-import { useAuth } from '../hooks/useAuth'
+import { useAuth } from '../hooks/useAuth.jsx'
+import SelectorCliente from '../components/SelectorCliente.jsx'
 
-const CLIENTES = [
-  'ATTACK','BERLISUR','BONOMI','CIBELES','CRISOLES','DORALBEN',
-  'FIVISA PROPIOS','FIVISA URUGUAY','HILOS PLASTICOS','KONIG','LIEPSI',
-  'LIVIO CENTRO','LIVIO RUTA','MACCIO','MATRIX','MICROSULES','MONTANS',
-  'MORSELOY','MOURA','NADIFER','PEDRO MERLA','PIRELLI','PRONTOMETAL',
-  'RADESCA','RASA','RAYDORAT','REDMAY','ROMANCE','RUTILAN','SAGRIN',
-  'SAMAN','SEBAMAR','SINTEPLAST','SOLTIS','STADIUM','SUDEL','SUPRANOR',
-  'TAFIREL','TECLUM','TIMATA','TORBUL','TRIMANT','VICAS','WEB','WURTH'
-]
-
-const CHOFERES = {
-  'javier-astrada': 'Javier Astrada',
-  'eduardo-rodriguez': 'Eduardo Rodriguez',
-  'michael-castano': 'Michael Castaño',
-  'sergio-capitani': 'Sergio Capitani',
-  'daniel-soria': 'Daniel Soria',
-  'anthony-stabile': 'Anthony Stabile',
-  'martin-pastor': 'Martin Pastor',
-  'carlos-figueira': 'Carlos Figueira',
-  'diego-cardozo': 'Diego Cardozo',
-  'carlos-bermejo': 'Carlos Bermejo',
+function calcularDiff(anterior, nuevo) {
+  const cambios = []
+  const compararLista = (listaAnterior, listaNueva, seccion) => {
+    listaNueva.forEach((item, i) => {
+      const ant = listaAnterior[i] || {}
+      Object.keys(item).forEach(campo => {
+        const a = String(ant[campo] ?? ''), b = String(item[campo] ?? '')
+        if (a !== b) cambios.push({ seccion, fila: i+1, campo, de: a||'(vacío)', a: b||'(vacío)' })
+      })
+    })
+  }
+  if (anterior) {
+    compararLista(anterior.entregas||[], nuevo.entregas, 'Entregas')
+    compararLista(anterior.levantes||[], nuevo.levantes, 'Levantes')
+    compararLista(anterior.clientesPuntuales||[], nuevo.clientesPuntuales, 'Clientes puntuales')
+    compararLista(anterior.devoluciones||[], nuevo.devoluciones, 'Devolución pallets')
+  }
+  return cambios
 }
 
-function entregaVacia() {
-  return { remitente: '', destinatario: '', aCobrar: '', bultos: '', comentarios: '' }
+// Calcula cuánto cambió el REC (palletDesarmar en levantes/puntuales) y el DEV (devoluciones)
+// por cliente, comparando el estado anterior contra el nuevo. Devuelve un mapa
+// { cliente: { rec: delta, dev: delta } } con solo los deltas (pueden ser negativos
+// si se borró o redujo un valor).
+function calcularDeltasPallets(anterior, nuevo) {
+  const deltas = {}
+
+  function sumar(cliente, campo, valor) {
+    if (!cliente) return
+    if (!deltas[cliente]) deltas[cliente] = { rec: 0, dev: 0 }
+    deltas[cliente][campo] += valor
+  }
+
+  function procesarListaRec(listaAnterior, listaNueva) {
+    listaNueva.forEach((item, i) => {
+      const ant = listaAnterior[i] || {}
+      const clienteNuevo = item.cliente || ''
+      const clienteAnterior = ant.cliente || ''
+      const valNuevo = Number(item.palletDesarmar) || 0
+      const valAnterior = Number(ant.palletDesarmar) || 0
+
+      if (clienteNuevo === clienteAnterior) {
+        // Mismo cliente en la fila: solo cambió la cantidad
+        const delta = valNuevo - valAnterior
+        if (delta !== 0) sumar(clienteNuevo, 'rec', delta)
+      } else {
+        // Cambió el cliente de la fila: revertir el valor viejo del cliente viejo,
+        // aplicar el valor nuevo al cliente nuevo
+        if (valAnterior !== 0) sumar(clienteAnterior, 'rec', -valAnterior)
+        if (valNuevo !== 0) sumar(clienteNuevo, 'rec', valNuevo)
+      }
+    })
+  }
+
+  function procesarDevoluciones(listaAnterior, listaNueva) {
+    listaNueva.forEach((item, i) => {
+      const ant = listaAnterior[i] || {}
+      const clienteNuevo = item.cliente || ''
+      const clienteAnterior = ant.cliente || ''
+      const valNuevo = Number(item.cantidad) || 0
+      const valAnterior = Number(ant.cantidad) || 0
+
+      if (clienteNuevo === clienteAnterior) {
+        const delta = valNuevo - valAnterior
+        if (delta !== 0) sumar(clienteNuevo, 'dev', delta)
+      } else {
+        if (valAnterior !== 0) sumar(clienteAnterior, 'dev', -valAnterior)
+        if (valNuevo !== 0) sumar(clienteNuevo, 'dev', valNuevo)
+      }
+    })
+  }
+
+  procesarListaRec(anterior?.levantes || [], nuevo.levantes)
+  procesarListaRec(anterior?.clientesPuntuales || [], nuevo.clientesPuntuales)
+  procesarDevoluciones(anterior?.devoluciones || [], nuevo.devoluciones)
+
+  return deltas
 }
 
-function levanteVacio() {
-  return { cliente: '', horaLlegada: '', horaSalida: '', bultos: '', palletDesarmar: '' }
-}
+function hoy() { return new Date().toISOString().split('T')[0] }
+const entregaVacia = () => ({ remitente:'', destinatario:'', aCobrar:'', bultos:'', comentarios:'', ok:false })
+const levanteVacio = () => ({ cliente:'', horaLlegada:'', horaSalida:'', bultos:'', palletDesarmar:'', comChofer:'', comOficina:'', controlOk:false })
+const puntualVacio = () => ({ cliente:'', horaLlegada:'', horaSalida:'', bultos:'', palletDesarmar:'', comChofer:'', comOficina:'', controlOk:false })
+const devVacia = () => ({ cliente:'', cantidad:'' })
 
-function devolucionVacia() {
-  return { cliente: '', cantidad: '' }
-}
-
-const inputStyle = {
-  width: '100%',
-  padding: '7px 10px',
-  border: '1px solid #ddd',
-  borderRadius: '6px',
-  fontSize: '14px',
-  boxSizing: 'border-box'
-}
-
-const labelStyle = {
-  fontSize: '12px',
-  color: '#666',
-  marginBottom: '4px',
-  display: 'block'
-}
+const IS = { width:'100%', padding:'7px 10px', border:'1px solid #ddd', borderRadius:'6px', fontSize:'14px', boxSizing:'border-box' }
+const ISD = { ...IS, background:'#f5f5f5', color:'#888', cursor:'not-allowed' }
+const LS = { fontSize:'12px', color:'#666', marginBottom:'4px', display:'block' }
 
 export default function Planilla() {
   const { fecha, choferId } = useParams()
   const { usuario } = useAuth()
   const navigate = useNavigate()
-  const [turno, setTurno] = useState('mañana')
-  const [entregas, setEntregas] = useState(Array(8).fill(null).map(entregaVacia))
-  const [levantes, setLevantes] = useState(Array(9).fill(null).map(levanteVacio))
-  const [devoluciones, setDevoluciones] = useState(Array(3).fill(null).map(devolucionVacia))
-  const [guardando, setGuardando] = useState(false)
-  const [guardado, setGuardado] = useState(false)
-  const [cargando, setCargando] = useState(true)
 
   const esChofer = usuario.rol === 'chofer'
+  const esOficina = usuario.rol === 'admin' || usuario.rol === 'operador'
+  const soloLectura = esChofer && fecha < hoy()
 
+  const [nombreChofer, setNombreChofer] = useState('')
+  const [todosClientes, setTodosClientes] = useState([])
+  const [turno, setTurno] = useState('mañana')
+  const [cargando, setCargando] = useState(true)
+  const [guardando, setGuardando] = useState(false)
+  const [guardado, setGuardado] = useState(false)
+  const [confirmarReinicio, setConfirmarReinicio] = useState(null)
+  const [okStates, setOkStates] = useState(Array(8).fill(false))
+
+  // Datos viven completamente fuera de React en refs
+  const datos = useRef({
+    entregas: Array(8).fill(null).map(entregaVacia),
+    levantes: Array(9).fill(null).map(levanteVacio),
+    clientesPuntuales: Array(4).fill(null).map(puntualVacio),
+    devoluciones: Array(3).fill(null).map(devVacia)
+  })
+  const datosAnteriores = useRef(null)
+  const timerRef = useRef(null)
+  const listo = useRef(false)
+  const usuarioRef = useRef(usuario)
+  useEffect(() => { usuarioRef.current = usuario }, [usuario])
+
+  // Snapshot visual para renders selectivos
+  const [snapshot, setSnapshot] = useState(null)
+
+  useEffect(() => { cargarChoferYClientes() }, [choferId])
   useEffect(() => {
-    async function cargarDatos() {
-      setCargando(true)
-      const ref = doc(db, 'planillas', fecha, 'choferes', `${choferId}_${turno}`)
-      const snap = await getDoc(ref)
-      if (snap.exists()) {
-        const data = snap.data()
-        setEntregas(data.entregas || Array(8).fill(null).map(entregaVacia))
-        setLevantes(data.levantes || Array(9).fill(null).map(levanteVacio))
-        setDevoluciones(data.devoluciones || Array(3).fill(null).map(devolucionVacia))
-      } else {
-        setEntregas(Array(8).fill(null).map(entregaVacia))
-        setLevantes(Array(9).fill(null).map(levanteVacio))
-        setDevoluciones(Array(3).fill(null).map(devolucionVacia))
-      }
-      setCargando(false)
-    }
+    listo.current = false
+    if (timerRef.current) clearTimeout(timerRef.current)
     cargarDatos()
   }, [fecha, choferId, turno])
 
-  async function guardar() {
+  async function cargarChoferYClientes() {
+    const [sc, sk] = await Promise.all([
+      getDoc(doc(db, 'choferes', choferId)),
+      getDocs(collection(db, 'clientes'))
+    ])
+    setNombreChofer(sc.exists() ? sc.data().nombre : choferId)
+    setTodosClientes(sk.docs.map(d => d.data().nombre).sort())
+  }
+
+  async function cargarDatos() {
+    setCargando(true)
+    const ref = doc(db, 'planillas', fecha, 'choferes', `${choferId}_${turno}`)
+    const snap = await getDoc(ref)
+    if (snap.exists()) {
+      const d = snap.data()
+      datos.current = {
+        entregas: (d.entregas||Array(8).fill(null).map(entregaVacia)).map(x=>({...entregaVacia(),...x})),
+        levantes: (d.levantes||Array(9).fill(null).map(levanteVacio)).map(x=>({...levanteVacio(),...x})),
+        clientesPuntuales: (d.clientesPuntuales||Array(4).fill(null).map(puntualVacio)).map(x=>({...puntualVacio(),...x})),
+        devoluciones: d.devoluciones||Array(3).fill(null).map(devVacia)
+      }
+      datosAnteriores.current = JSON.parse(JSON.stringify(datos.current))
+    } else {
+      datos.current = {
+        entregas: Array(8).fill(null).map(entregaVacia),
+        levantes: Array(9).fill(null).map(levanteVacio),
+        clientesPuntuales: Array(4).fill(null).map(puntualVacio),
+        devoluciones: Array(3).fill(null).map(devVacia)
+      }
+      datosAnteriores.current = null
+    }
+    setOkStates(datos.current.entregas.map(e => e.ok || false))
+    setSnapshot(JSON.parse(JSON.stringify(datos.current)))
+    setCargando(false)
+    setTimeout(() => { listo.current = true }, 200)
+  }
+
+  const guardar = useCallback(async () => {
+    if (!listo.current || soloLectura) return
     setGuardando(true)
     const ref = doc(db, 'planillas', fecha, 'choferes', `${choferId}_${turno}`)
-    await setDoc(ref, {
-      entregas,
-      levantes,
-      devoluciones,
-      modificadoPor: usuario.uid,
-      modificadoNombre: usuario.nombre,
-      modificadoAt: serverTimestamp()
-    }, { merge: true })
+    const nuevo = JSON.parse(JSON.stringify(datos.current))
+    const diff = calcularDiff(datosAnteriores.current, nuevo)
+
+    // Calculamos qué cambió en términos de pallets, para actualizar el saldo acumulado por cliente
+    const deltas = calcularDeltasPallets(datosAnteriores.current, nuevo)
+    const promesasSaldo = Object.entries(deltas)
+      .filter(([, d]) => d.rec !== 0 || d.dev !== 0)
+      .map(([cliente, d]) => {
+        const idCliente = cliente.toLowerCase().replace(/\s+/g, '-')
+        return setDoc(doc(db, 'saldosPallets', idCliente), {
+          cliente,
+          rec: increment(d.rec),
+          dev: increment(d.dev)
+        }, { merge: true })
+      })
+
+    await Promise.all([
+      setDoc(ref, { ...nuevo, modificadoPor: usuarioRef.current.uid, modificadoNombre: usuarioRef.current.nombre, modificadoAt: serverTimestamp() }, { merge: true }),
+      ...promesasSaldo
+    ])
+
+    if (diff.length > 0 || !datosAnteriores.current) {
+      await addDoc(collection(db, 'planillas', fecha, 'choferes', `${choferId}_${turno}`, 'historial'), {
+        modificadoPor: usuarioRef.current.uid, modificadoNombre: usuarioRef.current.nombre,
+        modificadoAt: new Date().toISOString(), fecha, choferId, turno, cambios: diff, snapshot: nuevo
+      })
+      datosAnteriores.current = nuevo
+    }
     setGuardando(false)
     setGuardado(true)
-    setTimeout(() => setGuardado(false), 3000)
+    setTimeout(() => setGuardado(false), 2000)
+  }, [fecha, choferId, turno, soloLectura])
+
+  function programar(delay) {
+    if (!listo.current || soloLectura) return
+    if (timerRef.current) clearTimeout(timerRef.current)
+    if (delay === 0) guardar()
+    else timerRef.current = setTimeout(guardar, delay)
   }
 
-  function marcarLlegada(i) {
-    const hora = new Date().toLocaleTimeString('es-UY', { hour: '2-digit', minute: '2-digit' })
-    const nuevos = [...levantes]
-    nuevos[i] = { ...nuevos[i], horaLlegada: hora }
-    setLevantes(nuevos)
+  function set(seccion, i, campo, valor, delay=3000) {
+    datos.current[seccion][i][campo] = valor
+    setSnapshot(JSON.parse(JSON.stringify(datos.current)))
+    programar(delay)
   }
 
-  function marcarSalida(i) {
-    const hora = new Date().toLocaleTimeString('es-UY', { hour: '2-digit', minute: '2-digit' })
-    const nuevos = [...levantes]
-    nuevos[i] = { ...nuevos[i], horaSalida: hora }
-    setLevantes(nuevos)
+  function horaActual() {
+    return new Date().toLocaleTimeString('es-UY', { hour:'2-digit', minute:'2-digit' })
   }
 
-  if (cargando) return <div style={{ padding: '40px', textAlign: 'center' }}>Cargando...</div>
+  function marcarHora(seccion, i, campo) {
+    const yaTiene = datos.current[seccion][i][campo]
+    if (yaTiene) {
+      setConfirmarReinicio({ seccion, i, campo })
+      return
+    }
+    const hora = horaActual()
+    datos.current[seccion][i][campo] = hora
+    setSnapshot(JSON.parse(JSON.stringify(datos.current)))
+    programar(0)
+  }
+
+  function confirmarReinicioHora() {
+    const { seccion, i, campo } = confirmarReinicio
+    const hora = horaActual()
+    datos.current[seccion][i][campo] = hora
+    setSnapshot(JSON.parse(JSON.stringify(datos.current)))
+    setConfirmarReinicio(null)
+    programar(0)
+  }
+
+  if (cargando || !snapshot) return <div style={{ padding:'40px', textAlign:'center' }}>Cargando...</div>
+
+  const { entregas, levantes, clientesPuntuales, devoluciones } = snapshot
+  const levantesChofer = levantes.map((l,i)=>({...l,_i:i})).filter(l=>l.cliente)
+  const puntualesChofer = clientesPuntuales.map((l,i)=>({...l,_i:i})).filter(l=>l.cliente)
+  const entregasChofer = entregas.map((e,i)=>({...e,_i:i})).filter(e=>e.remitente||e.destinatario)
+
+  // Input no controlado que no pierde foco
+  function Campo({ seccion, i, campo, delay=5000, type='text', disabled=false, placeholder='' }) {
+    const initialValue = datos.current[seccion][i][campo]
+    return (
+      <input
+        key={`${fecha}-${choferId}-${turno}-${seccion}-${i}-${campo}`}
+        defaultValue={initialValue}
+        disabled={disabled}
+        type={type}
+        placeholder={placeholder}
+        style={disabled ? ISD : IS}
+        onChange={ev => {
+          datos.current[seccion][i][campo] = ev.target.value
+          programar(delay)
+        }}
+      />
+    )
+  }
+
+  function FilaLevante({ l, i, seccion, clienteEditable, oficina }) {
+    const controlOk = snapshot[seccion][i]?.controlOk || false
+    return (
+      <div style={{ display:'grid', gridTemplateColumns:'1.3fr 90px 90px 70px 90px 1fr 1fr 44px', gap:'6px', marginBottom:'8px', alignItems:'end' }}>
+        <div>
+          {clienteEditable ? (
+            <SelectorCliente
+              value={l.cliente}
+              disabled={soloLectura}
+              clientes={todosClientes}
+              style={soloLectura ? ISD : IS}
+              onSelect={(nombre) => set(seccion, i, 'cliente', nombre, 0)}
+            />
+          ) : (
+            <div style={{...ISD, display:'flex', alignItems:'center'}}>{l.cliente}</div>
+          )}
+        </div>
+        <div>
+          {esChofer && !soloLectura ? (
+            <button onClick={() => marcarHora(seccion, i, 'horaLlegada')}
+              style={{...IS, background: l.horaLlegada?'#e6ffed':'#f7f7f7', cursor:'pointer', textAlign:'center', padding:'7px 4px', fontSize:'13px'}}>
+              {l.horaLlegada || '⏱'}
+            </button>
+          ) : (
+            <Campo seccion={seccion} i={i} campo="horaLlegada" delay={3000} disabled={soloLectura} placeholder="HH:MM" />
+          )}
+        </div>
+        <div>
+          {esChofer && !soloLectura ? (
+            <button onClick={() => marcarHora(seccion, i, 'horaSalida')}
+              style={{...IS, background: l.horaSalida?'#e6ffed':'#f7f7f7', cursor:'pointer', textAlign:'center', padding:'7px 4px', fontSize:'13px'}}>
+              {l.horaSalida || '⏱'}
+            </button>
+          ) : (
+            <Campo seccion={seccion} i={i} campo="horaSalida" delay={3000} disabled={soloLectura} placeholder="HH:MM" />
+          )}
+        </div>
+        <div><Campo seccion={seccion} i={i} campo="bultos" type="number" delay={3000} disabled={soloLectura} /></div>
+        <div><Campo seccion={seccion} i={i} campo="palletDesarmar" type="number" delay={3000} disabled={soloLectura} /></div>
+        <div><Campo seccion={seccion} i={i} campo="comChofer" delay={5000} disabled={soloLectura && !esChofer} placeholder="..." /></div>
+        <div><Campo seccion={seccion} i={i} campo="comOficina" delay={5000} disabled={!esOficina} placeholder="..." /></div>
+        <div style={{ display:'flex', justifyContent:'center', alignItems:'center' }}>
+          {oficina ? (
+            <button
+              onClick={() => { set(seccion, i, 'controlOk', !datos.current[seccion][i].controlOk, 0) }}
+              title="Control oficina"
+              style={{ width:'36px', height:'36px', borderRadius:'50%', border:`2px solid ${controlOk?'#3182ce':'#ddd'}`, background:controlOk?'#3182ce':'white', color:controlOk?'white':'#aaa', cursor:'pointer', fontSize:'16px', display:'flex', alignItems:'center', justifyContent:'center' }}>
+              ✓
+            </button>
+          ) : (
+            <div style={{ width:'36px', height:'36px', borderRadius:'50%', border:`2px solid ${controlOk?'#3182ce':'#ddd'}`, background:controlOk?'#3182ce':'white', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'16px', color:controlOk?'white':'#ddd' }}>
+              ✓
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  function HeaderLevante() {
+    return (
+      <div style={{ display:'grid', gridTemplateColumns:'1.3fr 90px 90px 70px 90px 1fr 1fr 44px', gap:'6px', marginBottom:'4px' }}>
+        {['Cliente','Llegada','Salida','Bultos','Pallets a desarmar','Com. chofer','Com. oficina','✓'].map(h => <label key={h} style={LS}>{h}</label>)}
+      </div>
+    )
+  }
 
   return (
-    <div style={{ padding: '24px', maxWidth: '900px', margin: '0 auto' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px', flexWrap: 'wrap' }}>
-        <button onClick={() => navigate('/')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '20px' }}>←</button>
+    <div style={{ padding:'24px', maxWidth:'1100px', margin:'0 auto' }}>
+      {/* Header */}
+      <div style={{ display:'flex', alignItems:'center', gap:'12px', marginBottom:'24px', flexWrap:'wrap' }}>
+        <button onClick={() => navigate('/')} style={{ background:'none', border:'none', cursor:'pointer', fontSize:'20px' }}>←</button>
         <div>
-          <h2 style={{ margin: 0, color: '#1a1a2e' }}>{CHOFERES[choferId]}</h2>
-          <div style={{ fontSize: '14px', color: '#888' }}>{fecha}</div>
+          <h2 style={{ margin:0, color:'#1a1a2e' }}>{nombreChofer}</h2>
+          <div style={{ fontSize:'14px', color:'#888' }}>{fecha}</div>
         </div>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
-          {['mañana', 'tarde'].map(t => (
-            <button
-              key={t}
-              onClick={() => setTurno(t)}
-              style={{
-                padding: '8px 20px',
-                borderRadius: '8px',
-                border: 'none',
-                cursor: 'pointer',
-                fontWeight: '600',
-                background: turno === t ? '#1a1a2e' : '#e2e8f0',
-                color: turno === t ? 'white' : '#444'
-              }}
-            >
-              {t.charAt(0).toUpperCase() + t.slice(1)}
-            </button>
-          ))}
+        {soloLectura && (
+          <span style={{ background:'#fff3cd', color:'#856404', padding:'4px 12px', borderRadius:'20px', fontSize:'13px', fontWeight:'600' }}>
+            Solo lectura — planilla de día anterior
+          </span>
+        )}
+        <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:'12px' }}>
+          {guardando && <span style={{ color:'#888', fontSize:'13px' }}>Guardando...</span>}
+          {guardado && !guardando && <span style={{ color:'green', fontSize:'13px' }}>✓ Guardado</span>}
+          <div style={{ display:'flex', gap:'8px' }}>
+            {['mañana','tarde'].map(t => (
+              <button key={t} onClick={() => setTurno(t)}
+                style={{ padding:'8px 20px', borderRadius:'8px', border:'none', cursor:'pointer', fontWeight:'600', background:turno===t?'#1a1a2e':'#e2e8f0', color:turno===t?'white':'#444' }}>
+                {t.charAt(0).toUpperCase()+t.slice(1)}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
-      {/* ENTREGAS */}
-      {!esChofer && (
-        <div style={{ background: 'white', borderRadius: '12px', padding: '20px', marginBottom: '20px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-          <h3 style={{ margin: '0 0 16px', color: '#1a1a2e' }}>Entregas</h3>
+      {/* ENTREGAS oficina */}
+      {esOficina && (
+        <div style={{ background:'white', borderRadius:'12px', padding:'20px', marginBottom:'20px', boxShadow:'0 1px 4px rgba(0,0,0,0.06)' }}>
+          <h3 style={{ margin:'0 0 16px', color:'#1a1a2e' }}>Entregas</h3>
           {entregas.map((e, i) => (
-            <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 100px 80px 1fr', gap: '8px', marginBottom: '10px', alignItems: 'end' }}>
-              <div>
-                {i === 0 && <label style={labelStyle}>Remitente</label>}
-                <input style={inputStyle} value={e.remitente} onChange={ev => { const n=[...entregas]; n[i].remitente=ev.target.value; setEntregas(n) }} />
+            <div key={i} style={{ display:'grid', gridTemplateColumns:'1fr 1fr 100px 80px 1fr', gap:'8px', marginBottom:'10px', alignItems:'end' }}>
+              <div>{i===0&&<label style={LS}>Remitente</label>}<Campo seccion="entregas" i={i} campo="remitente" delay={5000} /></div>
+              <div>{i===0&&<label style={LS}>Destinatario</label>}<Campo seccion="entregas" i={i} campo="destinatario" delay={5000} /></div>
+              <div>{i===0&&<label style={LS}>A cobrar</label>}<Campo seccion="entregas" i={i} campo="aCobrar" delay={5000} /></div>
+              <div>{i===0&&<label style={LS}>Bultos</label>}<Campo seccion="entregas" i={i} campo="bultos" type="number" delay={3000} /></div>
+              <div>{i===0&&<label style={LS}>Comentarios</label>}<Campo seccion="entregas" i={i} campo="comentarios" delay={5000} /></div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ENTREGAS chofer */}
+      {esChofer && entregasChofer.length > 0 && (
+        <div style={{ background:'white', borderRadius:'12px', padding:'20px', marginBottom:'20px', boxShadow:'0 1px 4px rgba(0,0,0,0.06)' }}>
+          <h3 style={{ margin:'0 0 16px', color:'#1a1a2e' }}>Entregas</h3>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 100px 80px 1fr 60px', gap:'8px', marginBottom:'4px' }}>
+            {['Remitente','Destinatario','A cobrar','Bultos','Comentarios','OK'].map(h=><label key={h} style={LS}>{h}</label>)}
+          </div>
+          {entregasChofer.map(e => {
+            const i = e._i
+            return (
+              <div key={i} style={{ display:'grid', gridTemplateColumns:'1fr 1fr 100px 80px 1fr 60px', gap:'8px', marginBottom:'8px', alignItems:'center' }}>
+                <div style={{...ISD, display:'flex', alignItems:'center'}}>{e.remitente}</div>
+                <div style={{...ISD, display:'flex', alignItems:'center'}}>{e.destinatario}</div>
+                <div style={{...ISD, display:'flex', alignItems:'center'}}>{e.aCobrar}</div>
+                <div style={{...ISD, display:'flex', alignItems:'center'}}>{e.bultos}</div>
+                <Campo seccion="entregas" i={e._i} campo="comentarios" delay={5000} disabled={soloLectura} placeholder="Comentario..." />
+                <div style={{ display:'flex', justifyContent:'center' }}>
+                  <button disabled={soloLectura}
+                    onClick={() => { set('entregas', i, 'ok', !datos.current.entregas[i].ok, 0); setOkStates(prev => { const n=[...prev]; n[i]=!n[i]; return n }) }}
+                    style={{ width:'36px', height:'36px', borderRadius:'50%', border:`2px solid ${okStates[i]?'#38a169':'#ddd'}`, background:okStates[i]?'#38a169':'white', color:okStates[i]?'white':'#aaa', cursor:soloLectura?'not-allowed':'pointer', fontSize:'16px', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                    ✓
+                  </button>
+                </div>
               </div>
-              <div>
-                {i === 0 && <label style={labelStyle}>Destinatario</label>}
-                <input style={inputStyle} value={e.destinatario} onChange={ev => { const n=[...entregas]; n[i].destinatario=ev.target.value; setEntregas(n) }} />
-              </div>
-              <div>
-                {i === 0 && <label style={labelStyle}>A cobrar</label>}
-                <input style={inputStyle} value={e.aCobrar} onChange={ev => { const n=[...entregas]; n[i].aCobrar=ev.target.value; setEntregas(n) }} />
-              </div>
-              <div>
-                {i === 0 && <label style={labelStyle}>Bultos</label>}
-                <input style={inputStyle} type="number" value={e.bultos} onChange={ev => { const n=[...entregas]; n[i].bultos=ev.target.value; setEntregas(n) }} />
-              </div>
-              <div>
-                {i === 0 && <label style={labelStyle}>Comentarios</label>}
-                <input style={inputStyle} value={e.comentarios} onChange={ev => { const n=[...entregas]; n[i].comentarios=ev.target.value; setEntregas(n) }} />
+            )
+          })}
+        </div>
+      )}
+
+      {/* LEVANTES */}
+      <div style={{ background:'white', borderRadius:'12px', padding:'20px', marginBottom:'20px', boxShadow:'0 1px 4px rgba(0,0,0,0.06)', overflowX:'auto' }}>
+        <h3 style={{ margin:'0 0 16px', color:'#1a1a2e' }}>Levantes</h3>
+        {esOficina && <><HeaderLevante />{levantes.map((l,i)=><FilaLevante key={i} l={l} i={i} seccion="levantes" clienteEditable={true} oficina={true} />)}</>}
+        {esChofer && (levantesChofer.length===0
+          ? <p style={{ color:'#888', fontSize:'14px' }}>No hay clientes cargados para este turno todavía.</p>
+          : <><HeaderLevante />{levantesChofer.map(l=><FilaLevante key={l._i} l={l} i={l._i} seccion="levantes" clienteEditable={false} oficina={false} />)}</>
+        )}
+      </div>
+
+      {/* CLIENTES PUNTUALES oficina */}
+      {esOficina && (
+        <div style={{ background:'white', borderRadius:'12px', padding:'20px', marginBottom:'20px', boxShadow:'0 1px 4px rgba(0,0,0,0.06)', overflowX:'auto' }}>
+          <h3 style={{ margin:'0 0 16px', color:'#1a1a2e' }}>Clientes puntuales</h3>
+          <div style={{ display:'grid', gridTemplateColumns:'1.3fr 90px 90px 70px 90px 1fr 1fr 44px', gap:'6px', marginBottom:'4px' }}>
+            {['Cliente','Llegada','Salida','Bultos','Pallets a desarmar','Com. chofer','Com. oficina','✓'].map(h=><label key={h} style={LS}>{h}</label>)}
+          </div>
+          {clientesPuntuales.map((l,i) => (
+            <div key={i} style={{ display:'grid', gridTemplateColumns:'1.3fr 90px 90px 70px 90px 1fr 1fr 44px', gap:'6px', marginBottom:'8px', alignItems:'end' }}>
+              <Campo seccion="clientesPuntuales" i={i} campo="cliente" delay={5000} placeholder="Nombre cliente" />
+              <Campo seccion="clientesPuntuales" i={i} campo="horaLlegada" delay={3000} placeholder="HH:MM" />
+              <Campo seccion="clientesPuntuales" i={i} campo="horaSalida" delay={3000} placeholder="HH:MM" />
+              <Campo seccion="clientesPuntuales" i={i} campo="bultos" type="number" delay={3000} />
+              <Campo seccion="clientesPuntuales" i={i} campo="palletDesarmar" type="number" delay={3000} />
+              <Campo seccion="clientesPuntuales" i={i} campo="comChofer" delay={5000} placeholder="..." />
+              <Campo seccion="clientesPuntuales" i={i} campo="comOficina" delay={5000} placeholder="..." />
+              <div style={{ display:'flex', justifyContent:'center', alignItems:'center' }}>
+                <button
+                  onClick={() => set('clientesPuntuales', i, 'controlOk', !datos.current.clientesPuntuales[i].controlOk, 0)}
+                  title="Control oficina"
+                  style={{ width:'36px', height:'36px', borderRadius:'50%', border:`2px solid ${snapshot.clientesPuntuales[i]?.controlOk?'#3182ce':'#ddd'}`, background:snapshot.clientesPuntuales[i]?.controlOk?'#3182ce':'white', color:snapshot.clientesPuntuales[i]?.controlOk?'white':'#aaa', cursor:'pointer', fontSize:'16px', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                  ✓
+                </button>
               </div>
             </div>
           ))}
         </div>
       )}
 
-      {/* LEVANTES */}
-      <div style={{ background: 'white', borderRadius: '12px', padding: '20px', marginBottom: '20px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-        <h3 style={{ margin: '0 0 16px', color: '#1a1a2e' }}>Levantes</h3>
-        {levantes.map((l, i) => (
-          <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr 80px 80px', gap: '8px', marginBottom: '10px', alignItems: 'end' }}>
+      {/* CLIENTES PUNTUALES chofer */}
+      {esChofer && puntualesChofer.length > 0 && (
+        <div style={{ background:'white', borderRadius:'12px', padding:'20px', marginBottom:'20px', boxShadow:'0 1px 4px rgba(0,0,0,0.06)', overflowX:'auto' }}>
+          <h3 style={{ margin:'0 0 16px', color:'#1a1a2e' }}>Clientes puntuales</h3>
+          <HeaderLevante />
+          {puntualesChofer.map(l => <FilaLevante key={l._i} l={l} i={l._i} seccion="clientesPuntuales" clienteEditable={false} oficina={false} />)}
+        </div>
+      )}
+
+      {/* DEVOLUCIÓN PALLETS */}
+      <div style={{ background:'white', borderRadius:'12px', padding:'20px', marginBottom:'20px', boxShadow:'0 1px 4px rgba(0,0,0,0.06)' }}>
+        <h3 style={{ margin:'0 0 16px', color:'#1a1a2e' }}>Devolución de Pallets</h3>
+        {devoluciones.map((d,i) => (
+          <div key={i} style={{ display:'grid', gridTemplateColumns:'1fr 120px', gap:'8px', marginBottom:'10px', alignItems:'end' }}>
             <div>
-              {i === 0 && <label style={labelStyle}>Cliente</label>}
-              <select style={inputStyle} value={l.cliente} onChange={ev => { const n=[...levantes]; n[i].cliente=ev.target.value; setLevantes(n) }}>
-                <option value="">— Seleccionar —</option>
-                {CLIENTES.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
+              {i===0&&<label style={LS}>Cliente</label>}
+              <SelectorCliente
+                value={d.cliente}
+                disabled={soloLectura}
+                clientes={todosClientes}
+                style={soloLectura ? ISD : IS}
+                onSelect={(nombre) => set('devoluciones', i, 'cliente', nombre, 0)}
+              />
             </div>
             <div>
-              {i === 0 && <label style={labelStyle}>Hora llegada</label>}
-              {esChofer ? (
-                <button onClick={() => marcarLlegada(i)} style={{ ...inputStyle, background: l.horaLlegada ? '#e6ffed' : '#f7f7f7', cursor: 'pointer', textAlign: 'center' }}>
-                  {l.horaLlegada || '⏱ Llegada'}
-                </button>
-              ) : (
-                <input style={inputStyle} value={l.horaLlegada} onChange={ev => { const n=[...levantes]; n[i].horaLlegada=ev.target.value; setLevantes(n) }} placeholder="HH:MM" />
-              )}
-            </div>
-            <div>
-              {i === 0 && <label style={labelStyle}>Hora salida</label>}
-              {esChofer ? (
-                <button onClick={() => marcarSalida(i)} style={{ ...inputStyle, background: l.horaSalida ? '#e6ffed' : '#f7f7f7', cursor: 'pointer', textAlign: 'center' }}>
-                  {l.horaSalida || '⏱ Salida'}
-                </button>
-              ) : (
-                <input style={inputStyle} value={l.horaSalida} onChange={ev => { const n=[...levantes]; n[i].horaSalida=ev.target.value; setLevantes(n) }} placeholder="HH:MM" />
-              )}
-            </div>
-            <div>
-              {i === 0 && <label style={labelStyle}>Bultos</label>}
-              <input style={inputStyle} type="number" value={l.bultos} onChange={ev => { const n=[...levantes]; n[i].bultos=ev.target.value; setLevantes(n) }} />
-            </div>
-            <div>
-              {i === 0 && <label style={labelStyle}>Pallets</label>}
-              <input style={inputStyle} type="number" value={l.palletDesarmar} onChange={ev => { const n=[...levantes]; n[i].palletDesarmar=ev.target.value; setLevantes(n) }} />
+              {i===0&&<label style={LS}>Cantidad</label>}
+              <Campo seccion="devoluciones" i={i} campo="cantidad" type="number" delay={3000} disabled={soloLectura} />
             </div>
           </div>
         ))}
       </div>
 
-      {/* DEVOLUCIÓN PALLETS */}
-      {!esChofer && (
-        <div style={{ background: 'white', borderRadius: '12px', padding: '20px', marginBottom: '20px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-          <h3 style={{ margin: '0 0 16px', color: '#1a1a2e' }}>Devolución de Pallets</h3>
-          {devoluciones.map((d, i) => (
-            <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 120px', gap: '8px', marginBottom: '10px', alignItems: 'end' }}>
-              <div>
-                {i === 0 && <label style={labelStyle}>Cliente</label>}
-                <select style={inputStyle} value={d.cliente} onChange={ev => { const n=[...devoluciones]; n[i].cliente=ev.target.value; setDevoluciones(n) }}>
-                  <option value="">— Seleccionar —</option>
-                  {CLIENTES.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-              <div>
-                {i === 0 && <label style={labelStyle}>Cantidad</label>}
-                <input style={inputStyle} type="number" value={d.cantidad} onChange={ev => { const n=[...devoluciones]; n[i].cantidad=ev.target.value; setDevoluciones(n) }} />
-              </div>
+      {/* MODAL REINICIO HORA */}
+      {confirmarReinicio && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000 }}>
+          <div style={{ background:'white', borderRadius:'12px', padding:'24px', maxWidth:'320px', textAlign:'center', boxShadow:'0 4px 20px rgba(0,0,0,0.2)' }}>
+            <p style={{ marginBottom:'20px', color:'#1a1a2e', fontSize:'15px' }}>Ya marcaste esta hora. ¿Querés reiniciarla a la hora actual?</p>
+            <div style={{ display:'flex', gap:'12px', justifyContent:'center' }}>
+              <button onClick={() => setConfirmarReinicio(null)} style={{ padding:'10px 20px', background:'#f0f0f0', color:'#444', border:'none', borderRadius:'8px', cursor:'pointer', fontWeight:'600' }}>Cancelar</button>
+              <button onClick={confirmarReinicioHora} style={{ padding:'10px 20px', background:'#1a1a2e', color:'white', border:'none', borderRadius:'8px', cursor:'pointer', fontWeight:'600' }}>Sí, reiniciar</button>
             </div>
-          ))}
+          </div>
         </div>
       )}
-
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-        {guardado && <span style={{ color: 'green', alignSelf: 'center', fontSize: '14px' }}>✓ Guardado</span>}
-        <button
-          onClick={guardar}
-          disabled={guardando}
-          style={{
-            padding: '12px 32px',
-            background: guardando ? '#aaa' : '#1a1a2e',
-            color: 'white',
-            border: 'none',
-            borderRadius: '8px',
-            fontSize: '15px',
-            fontWeight: '600',
-            cursor: guardando ? 'not-allowed' : 'pointer'
-          }}
-        >
-          {guardando ? 'Guardando...' : 'Guardar'}
-        </button>
-      </div>
     </div>
   )
 }

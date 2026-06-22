@@ -54,7 +54,8 @@ export default function Dashboard() {
         const parts = docSnap.id.split('_')
         const choferId = parts[0]
         const turno = parts[1]
-        const choferNombre = data.modificadoNombre || choferId
+        const choferReal = choferes.find(c => c.id === choferId)
+        const choferNombre = choferReal ? choferReal.nombre : choferId
 
         const allLevantes = [
           ...(data.levantes || []).map(l => ({ ...l, seccion: 'Levante' })),

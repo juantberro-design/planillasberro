@@ -170,7 +170,7 @@ export default function Informes() {
   })
 
   return (
-    <div style={{ padding: '24px', maxWidth: '1000px', margin: '0 auto' }}>
+    <div style={{ padding: 'clamp(12px,4vw,24px)', maxWidth: '1000px', margin: '0 auto' }}>
       <h2 style={{ margin: '0 0 24px', color: '#1a1a2e' }}>Informes</h2>
 
       {/* Tipo de informe */}

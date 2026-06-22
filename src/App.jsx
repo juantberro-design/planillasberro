@@ -6,6 +6,8 @@ import Planilla from './pages/Planilla'
 import Pallets from './pages/Pallets'
 import Admin from './pages/Admin'
 import Informes from './pages/Informes'
+import ImprimirPlanillas from './pages/ImprimirPlanillas'
+import RetirosTurno from './pages/RetirosTurno'
 import Layout from './components/Layout'
 
 function PrivateRoute({ children, roles }) {
@@ -36,6 +38,16 @@ export default function App() {
           <Route path="informes" element={
             <PrivateRoute roles={['admin','operador']}>
               <Informes />
+            </PrivateRoute>
+          } />
+          <Route path="imprimir/:fecha" element={
+            <PrivateRoute roles={['admin','operador']}>
+              <ImprimirPlanillas />
+            </PrivateRoute>
+          } />
+          <Route path="retiros" element={
+            <PrivateRoute roles={['admin','operador']}>
+              <RetirosTurno />
             </PrivateRoute>
           } />
           <Route path="admin" element={

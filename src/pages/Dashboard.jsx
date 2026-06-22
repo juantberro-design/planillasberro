@@ -86,7 +86,7 @@ export default function Dashboard() {
   if (cargando) return <div style={{ padding: '40px', textAlign: 'center', color: '#888' }}>Cargando...</div>
 
   return (
-    <div style={{ padding: '24px', maxWidth: '900px', margin: '0 auto' }}>
+    <div style={{ padding: 'clamp(12px, 4vw, 24px)', maxWidth: '900px', margin: '0 auto' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
         <h2 style={{ margin: 0, color: '#1a1a2e' }}>Planillas del día</h2>
         <input
@@ -99,28 +99,28 @@ export default function Dashboard() {
 
       {/* BUSCADOR — solo para admin/operador */}
       {esOficina && (
-        <div style={{ background: 'white', borderRadius: '12px', padding: '16px 20px', marginBottom: '24px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+        <div style={{ background: 'white', borderRadius: '12px', padding: 'clamp(12px,3vw,20px)', marginBottom: '20px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
           <div style={{ fontWeight: '600', color: '#1a1a2e', marginBottom: '10px', fontSize: '14px' }}>
             🔍 Buscar cliente en planillas de hoy
           </div>
-          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
             <input
               type="text"
               value={busqueda}
               onChange={e => setBusqueda(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && buscarCliente()}
               placeholder="Nombre del cliente..."
-              style={{ flex: 1, padding: '9px 12px', border: '1px solid #ddd', borderRadius: '8px', fontSize: '14px' }}
+              style={{ flex: '1 1 160px', padding: '11px 12px', border: '1px solid #ddd', borderRadius: '8px', fontSize: '16px', minWidth: 0 }}
             />
             <button
               onClick={buscarCliente}
               disabled={buscando || !busqueda.trim()}
-              style={{ padding: '9px 20px', background: busqueda.trim() ? '#1a1a2e' : '#aaa', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: busqueda.trim() ? 'pointer' : 'not-allowed' }}>
-              {buscando ? 'Buscando...' : 'Buscar'}
+              style={{ padding: '11px 18px', background: busqueda.trim() ? '#1a1a2e' : '#aaa', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: busqueda.trim() ? 'pointer' : 'not-allowed', whiteSpace: 'nowrap' }}>
+              {buscando ? '...' : 'Buscar'}
             </button>
             {resultadosBusqueda !== null && (
               <button onClick={() => { setBusqueda(''); setResultadosBusqueda(null) }}
-                style={{ padding: '9px 14px', background: '#f0f0f0', color: '#444', border: 'none', borderRadius: '8px', fontSize: '14px', cursor: 'pointer' }}>
+                style={{ padding: '11px 14px', background: '#f0f0f0', color: '#444', border: 'none', borderRadius: '8px', fontSize: '14px', cursor: 'pointer' }}>
                 ✕
               </button>
             )}
@@ -158,13 +158,29 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* ACCIONES RÁPIDAS — solo para admin/operador */}
+      {esOficina && (
+        <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', flexWrap: 'wrap' }}>
+          <button
+            onClick={() => navigate(`/imprimir/${fecha}`)}
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 18px', background: 'white', color: '#1a1a2e', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+            🖨 Imprimir planillas del día
+          </button>
+          <button
+            onClick={() => navigate('/retiros')}
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 18px', background: 'white', color: '#1a1a2e', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+            📋 Consultar retiros del turno
+          </button>
+        </div>
+      )}
+
       {/* GRILLA DE CHOFERES */}
       {choferesFiltrados.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '40px', color: '#888' }}>
           No hay choferes activos. Agregá choferes desde el panel de Admin.
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '16px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '12px' }}>
           {choferesFiltrados.map(chofer => (
             <div
               key={chofer.id}

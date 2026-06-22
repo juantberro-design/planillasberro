@@ -90,7 +90,7 @@ const levanteVacio = () => ({ cliente:'', horaLlegada:'', horaSalida:'', bultos:
 const puntualVacio = () => ({ cliente:'', horaLlegada:'', horaSalida:'', bultos:'', palletDesarmar:'', comChofer:'', comOficina:'', controlOk:false })
 const devVacia = () => ({ cliente:'', cantidad:'' })
 
-const IS = { width:'100%', padding:'7px 10px', border:'1px solid #ddd', borderRadius:'6px', fontSize:'14px', boxSizing:'border-box' }
+const IS = { width:'100%', padding:'10px', border:'1px solid #ddd', borderRadius:'6px', fontSize:'16px', boxSizing:'border-box' }
 const ISD = { ...IS, background:'#f5f5f5', color:'#888', cursor:'not-allowed' }
 const LS = { fontSize:'12px', color:'#666', marginBottom:'4px', display:'block' }
 
@@ -340,27 +340,94 @@ export default function Planilla() {
     )
   }
 
-  return (
-    <div style={{ padding:'24px', maxWidth:'1100px', margin:'0 auto' }}>
-      {/* Header */}
-      <div style={{ display:'flex', alignItems:'center', gap:'12px', marginBottom:'24px', flexWrap:'wrap' }}>
-        <button onClick={() => navigate('/')} style={{ background:'none', border:'none', cursor:'pointer', fontSize:'20px' }}>←</button>
+  // Tarjeta vertical para la vista del chofer en celular — un cliente por tarjeta.
+  // El layout en tabla (FilaLevante) sigue siendo el que usa la oficina en pantallas grandes.
+  function TarjetaLevanteChofer({ l, i, seccion }) {
+    return (
+      <div style={{
+        background:'#f8f9fa', border:'1px solid #e2e8f0', borderRadius:'10px',
+        padding:'14px', marginBottom:'12px'
+      }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'12px' }}>
+          <span style={{ fontWeight:'700', fontSize:'16px', color:'#1a1a2e' }}>{l.cliente}</span>
+          {l.controlOk && (
+            <span style={{ background:'#3182ce', color:'white', borderRadius:'12px', padding:'2px 10px', fontSize:'11px', fontWeight:'600' }}>
+              ✓ Controlado
+            </span>
+          )}
+        </div>
+
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px', marginBottom:'10px' }}>
+          <div>
+            <label style={LS}>Llegada</label>
+            {!soloLectura ? (
+              <button onClick={() => marcarHora(seccion, i, 'horaLlegada')}
+                style={{...IS, background: l.horaLlegada?'#e6ffed':'white', cursor:'pointer', textAlign:'center', fontWeight:'600', padding:'12px'}}>
+                {l.horaLlegada || '⏱ Marcar'}
+              </button>
+            ) : (
+              <div style={{...ISD, padding:'12px', textAlign:'center'}}>{l.horaLlegada || '-'}</div>
+            )}
+          </div>
+          <div>
+            <label style={LS}>Salida</label>
+            {!soloLectura ? (
+              <button onClick={() => marcarHora(seccion, i, 'horaSalida')}
+                style={{...IS, background: l.horaSalida?'#e6ffed':'white', cursor:'pointer', textAlign:'center', fontWeight:'600', padding:'12px'}}>
+                {l.horaSalida || '⏱ Marcar'}
+              </button>
+            ) : (
+              <div style={{...ISD, padding:'12px', textAlign:'center'}}>{l.horaSalida || '-'}</div>
+            )}
+          </div>
+        </div>
+
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px', marginBottom:'10px' }}>
+          <div>
+            <label style={LS}>Bultos</label>
+            <Campo seccion={seccion} i={i} campo="bultos" type="number" delay={3000} disabled={soloLectura} />
+          </div>
+          <div>
+            <label style={LS}>Pallets a desarmar</label>
+            <Campo seccion={seccion} i={i} campo="palletDesarmar" type="number" delay={3000} disabled={soloLectura} />
+          </div>
+        </div>
+
         <div>
-          <h2 style={{ margin:0, color:'#1a1a2e' }}>{nombreChofer}</h2>
-          <div style={{ fontSize:'14px', color:'#888' }}>{fecha}</div>
+          <label style={LS}>Comentario</label>
+          <Campo seccion={seccion} i={i} campo="comChofer" delay={5000} disabled={soloLectura} placeholder="Agregar comentario..." />
+        </div>
+
+        {l.comOficina && (
+          <div style={{ marginTop:'10px', padding:'8px 10px', background:'#fff8e1', borderRadius:'6px', fontSize:'13px', color:'#8a6d00' }}>
+            <strong>Oficina:</strong> {l.comOficina}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ padding:'clamp(12px,4vw,24px)', maxWidth:'1100px', margin:'0 auto' }}>
+      {/* Header */}
+      <div style={{ display:'flex', alignItems:'center', gap:'10px', marginBottom:'20px', flexWrap:'wrap' }}>
+        <button onClick={() => navigate('/')} style={{ background:'none', border:'none', cursor:'pointer', fontSize:'20px', padding:'4px' }}>←</button>
+        <div>
+          <h2 style={{ margin:0, color:'#1a1a2e', fontSize:'clamp(17px,4.5vw,22px)' }}>{nombreChofer}</h2>
+          <div style={{ fontSize:'13px', color:'#888' }}>{fecha}</div>
         </div>
         {soloLectura && (
-          <span style={{ background:'#fff3cd', color:'#856404', padding:'4px 12px', borderRadius:'20px', fontSize:'13px', fontWeight:'600' }}>
-            Solo lectura — planilla de día anterior
+          <span style={{ background:'#fff3cd', color:'#856404', padding:'4px 12px', borderRadius:'20px', fontSize:'12px', fontWeight:'600' }}>
+            Solo lectura
           </span>
         )}
-        <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:'12px' }}>
-          {guardando && <span style={{ color:'#888', fontSize:'13px' }}>Guardando...</span>}
-          {guardado && !guardando && <span style={{ color:'green', fontSize:'13px' }}>✓ Guardado</span>}
-          <div style={{ display:'flex', gap:'8px' }}>
+        <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:'10px', flexWrap:'wrap' }}>
+          {guardando && <span style={{ color:'#888', fontSize:'12px' }}>Guardando...</span>}
+          {guardado && !guardando && <span style={{ color:'green', fontSize:'12px' }}>✓ Guardado</span>}
+          <div style={{ display:'flex', gap:'6px' }}>
             {['mañana','tarde'].map(t => (
               <button key={t} onClick={() => setTurno(t)}
-                style={{ padding:'8px 20px', borderRadius:'8px', border:'none', cursor:'pointer', fontWeight:'600', background:turno===t?'#1a1a2e':'#e2e8f0', color:turno===t?'white':'#444' }}>
+                style={{ padding:'10px 16px', borderRadius:'8px', border:'none', cursor:'pointer', fontWeight:'600', fontSize:'14px', background:turno===t?'#1a1a2e':'#e2e8f0', color:turno===t?'white':'#444' }}>
                 {t.charAt(0).toUpperCase()+t.slice(1)}
               </button>
             ))}
@@ -388,38 +455,78 @@ export default function Planilla() {
       {esChofer && entregasChofer.length > 0 && (
         <div style={{ background:'white', borderRadius:'12px', padding:'20px', marginBottom:'20px', boxShadow:'0 1px 4px rgba(0,0,0,0.06)' }}>
           <h3 style={{ margin:'0 0 16px', color:'#1a1a2e' }}>Entregas</h3>
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 100px 80px 1fr 60px', gap:'8px', marginBottom:'4px' }}>
-            {['Remitente','Destinatario','A cobrar','Bultos','Comentarios','OK'].map(h=><label key={h} style={LS}>{h}</label>)}
-          </div>
-          {entregasChofer.map(e => {
-            const i = e._i
-            return (
-              <div key={i} style={{ display:'grid', gridTemplateColumns:'1fr 1fr 100px 80px 1fr 60px', gap:'8px', marginBottom:'8px', alignItems:'center' }}>
-                <div style={{...ISD, display:'flex', alignItems:'center'}}>{e.remitente}</div>
-                <div style={{...ISD, display:'flex', alignItems:'center'}}>{e.destinatario}</div>
-                <div style={{...ISD, display:'flex', alignItems:'center'}}>{e.aCobrar}</div>
-                <div style={{...ISD, display:'flex', alignItems:'center'}}>{e.bultos}</div>
-                <Campo seccion="entregas" i={e._i} campo="comentarios" delay={5000} disabled={soloLectura} placeholder="Comentario..." />
-                <div style={{ display:'flex', justifyContent:'center' }}>
-                  <button disabled={soloLectura}
-                    onClick={() => { set('entregas', i, 'ok', !datos.current.entregas[i].ok, 0); setOkStates(prev => { const n=[...prev]; n[i]=!n[i]; return n }) }}
-                    style={{ width:'36px', height:'36px', borderRadius:'50%', border:`2px solid ${okStates[i]?'#38a169':'#ddd'}`, background:okStates[i]?'#38a169':'white', color:okStates[i]?'white':'#aaa', cursor:soloLectura?'not-allowed':'pointer', fontSize:'16px', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                    ✓
-                  </button>
+
+          {/* Tarjetas — mobile */}
+          <div className="berro-tarjetas-chofer">
+            {entregasChofer.map(e => {
+              const i = e._i
+              return (
+                <div key={i} style={{ background:'#f8f9fa', border:'1px solid #e2e8f0', borderRadius:'10px', padding:'14px', marginBottom:'12px' }}>
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'10px' }}>
+                    <span style={{ fontWeight:'700', fontSize:'15px', color:'#1a1a2e' }}>{e.remitente} → {e.destinatario}</span>
+                    <button disabled={soloLectura}
+                      onClick={() => { set('entregas', i, 'ok', !datos.current.entregas[i].ok, 0); setOkStates(prev => { const n=[...prev]; n[i]=!n[i]; return n }) }}
+                      style={{ width:'36px', height:'36px', flexShrink:0, borderRadius:'50%', border:`2px solid ${okStates[i]?'#38a169':'#ddd'}`, background:okStates[i]?'#38a169':'white', color:okStates[i]?'white':'#aaa', cursor:soloLectura?'not-allowed':'pointer', fontSize:'16px', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                      ✓
+                    </button>
+                  </div>
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'8px', marginBottom:'10px', fontSize:'13px', color:'#666' }}>
+                    <div><strong>A cobrar:</strong> {e.aCobrar || '-'}</div>
+                    <div><strong>Bultos:</strong> {e.bultos || '-'}</div>
+                  </div>
+                  <label style={LS}>Comentario</label>
+                  <Campo seccion="entregas" i={i} campo="comentarios" delay={5000} disabled={soloLectura} placeholder="Comentario..." />
                 </div>
-              </div>
-            )
-          })}
+              )
+            })}
+          </div>
+
+          {/* Tabla — desktop */}
+          <div className="berro-tabla-chofer" style={{ overflowX:'auto' }}>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 100px 80px 1fr 60px', gap:'8px', marginBottom:'4px' }}>
+              {['Remitente','Destinatario','A cobrar','Bultos','Comentarios','OK'].map(h=><label key={h} style={LS}>{h}</label>)}
+            </div>
+            {entregasChofer.map(e => {
+              const i = e._i
+              return (
+                <div key={i} style={{ display:'grid', gridTemplateColumns:'1fr 1fr 100px 80px 1fr 60px', gap:'8px', marginBottom:'8px', alignItems:'center' }}>
+                  <div style={{...ISD, display:'flex', alignItems:'center'}}>{e.remitente}</div>
+                  <div style={{...ISD, display:'flex', alignItems:'center'}}>{e.destinatario}</div>
+                  <div style={{...ISD, display:'flex', alignItems:'center'}}>{e.aCobrar}</div>
+                  <div style={{...ISD, display:'flex', alignItems:'center'}}>{e.bultos}</div>
+                  <Campo seccion="entregas" i={e._i} campo="comentarios" delay={5000} disabled={soloLectura} placeholder="Comentario..." />
+                  <div style={{ display:'flex', justifyContent:'center' }}>
+                    <button disabled={soloLectura}
+                      onClick={() => { set('entregas', i, 'ok', !datos.current.entregas[i].ok, 0); setOkStates(prev => { const n=[...prev]; n[i]=!n[i]; return n }) }}
+                      style={{ width:'36px', height:'36px', borderRadius:'50%', border:`2px solid ${okStates[i]?'#38a169':'#ddd'}`, background:okStates[i]?'#38a169':'white', color:okStates[i]?'white':'#aaa', cursor:soloLectura?'not-allowed':'pointer', fontSize:'16px', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                      ✓
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
 
+
       {/* LEVANTES */}
-      <div style={{ background:'white', borderRadius:'12px', padding:'20px', marginBottom:'20px', boxShadow:'0 1px 4px rgba(0,0,0,0.06)', overflowX:'auto' }}>
+      <div style={{ background:'white', borderRadius:'12px', padding:'20px', marginBottom:'20px', boxShadow:'0 1px 4px rgba(0,0,0,0.06)' }}>
         <h3 style={{ margin:'0 0 16px', color:'#1a1a2e' }}>Levantes</h3>
-        {esOficina && <><HeaderLevante />{levantes.map((l,i)=><FilaLevante key={i} l={l} i={i} seccion="levantes" clienteEditable={true} oficina={true} />)}</>}
+        {esOficina && <div style={{ overflowX:'auto' }}><HeaderLevante />{levantes.map((l,i)=><FilaLevante key={i} l={l} i={i} seccion="levantes" clienteEditable={true} oficina={true} />)}</div>}
         {esChofer && (levantesChofer.length===0
           ? <p style={{ color:'#888', fontSize:'14px' }}>No hay clientes cargados para este turno todavía.</p>
-          : <><HeaderLevante />{levantesChofer.map(l=><FilaLevante key={l._i} l={l} i={l._i} seccion="levantes" clienteEditable={false} oficina={false} />)}</>
+          : <>
+              {/* Tarjetas — vista mobile del chofer */}
+              <div className="berro-tarjetas-chofer">
+                {levantesChofer.map(l => <TarjetaLevanteChofer key={l._i} l={l} i={l._i} seccion="levantes" />)}
+              </div>
+              {/* Tabla — vista desktop del chofer */}
+              <div className="berro-tabla-chofer" style={{ overflowX:'auto' }}>
+                <HeaderLevante />
+                {levantesChofer.map(l=><FilaLevante key={l._i} l={l} i={l._i} seccion="levantes" clienteEditable={false} oficina={false} />)}
+              </div>
+            </>
         )}
       </div>
 
@@ -454,10 +561,15 @@ export default function Planilla() {
 
       {/* CLIENTES PUNTUALES chofer */}
       {esChofer && puntualesChofer.length > 0 && (
-        <div style={{ background:'white', borderRadius:'12px', padding:'20px', marginBottom:'20px', boxShadow:'0 1px 4px rgba(0,0,0,0.06)', overflowX:'auto' }}>
+        <div style={{ background:'white', borderRadius:'12px', padding:'20px', marginBottom:'20px', boxShadow:'0 1px 4px rgba(0,0,0,0.06)' }}>
           <h3 style={{ margin:'0 0 16px', color:'#1a1a2e' }}>Clientes puntuales</h3>
-          <HeaderLevante />
-          {puntualesChofer.map(l => <FilaLevante key={l._i} l={l} i={l._i} seccion="clientesPuntuales" clienteEditable={false} oficina={false} />)}
+          <div className="berro-tarjetas-chofer">
+            {puntualesChofer.map(l => <TarjetaLevanteChofer key={l._i} l={l} i={l._i} seccion="clientesPuntuales" />)}
+          </div>
+          <div className="berro-tabla-chofer" style={{ overflowX:'auto' }}>
+            <HeaderLevante />
+            {puntualesChofer.map(l => <FilaLevante key={l._i} l={l} i={l._i} seccion="clientesPuntuales" clienteEditable={false} oficina={false} />)}
+          </div>
         </div>
       )}
 
@@ -486,16 +598,25 @@ export default function Planilla() {
 
       {/* MODAL REINICIO HORA */}
       {confirmarReinicio && (
-        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000 }}>
-          <div style={{ background:'white', borderRadius:'12px', padding:'24px', maxWidth:'320px', textAlign:'center', boxShadow:'0 4px 20px rgba(0,0,0,0.2)' }}>
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000, padding:'16px' }}>
+          <div style={{ background:'white', borderRadius:'12px', padding:'24px', maxWidth:'320px', width:'100%', textAlign:'center', boxShadow:'0 4px 20px rgba(0,0,0,0.2)' }}>
             <p style={{ marginBottom:'20px', color:'#1a1a2e', fontSize:'15px' }}>Ya marcaste esta hora. ¿Querés reiniciarla a la hora actual?</p>
             <div style={{ display:'flex', gap:'12px', justifyContent:'center' }}>
-              <button onClick={() => setConfirmarReinicio(null)} style={{ padding:'10px 20px', background:'#f0f0f0', color:'#444', border:'none', borderRadius:'8px', cursor:'pointer', fontWeight:'600' }}>Cancelar</button>
-              <button onClick={confirmarReinicioHora} style={{ padding:'10px 20px', background:'#1a1a2e', color:'white', border:'none', borderRadius:'8px', cursor:'pointer', fontWeight:'600' }}>Sí, reiniciar</button>
+              <button onClick={() => setConfirmarReinicio(null)} style={{ padding:'12px 20px', background:'#f0f0f0', color:'#444', border:'none', borderRadius:'8px', cursor:'pointer', fontWeight:'600', flex:1 }}>Cancelar</button>
+              <button onClick={confirmarReinicioHora} style={{ padding:'12px 20px', background:'#1a1a2e', color:'white', border:'none', borderRadius:'8px', cursor:'pointer', fontWeight:'600', flex:1 }}>Sí, reiniciar</button>
             </div>
           </div>
         </div>
       )}
+
+      <style>{`
+        .berro-tarjetas-chofer { display: none; }
+        .berro-tabla-chofer { display: block; }
+        @media (max-width: 720px) {
+          .berro-tarjetas-chofer { display: block; }
+          .berro-tabla-chofer { display: none; }
+        }
+      `}</style>
     </div>
   )
 }

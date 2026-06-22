@@ -164,7 +164,7 @@ export default function Pallets() {
   }, 0)
 
   return (
-    <div style={{ padding: '24px', maxWidth: '900px', margin: '0 auto' }}>
+    <div style={{ padding: 'clamp(12px,4vw,24px)', maxWidth: '900px', margin: '0 auto' }}>
       <h2 style={{ margin: '0 0 24px', color: '#1a1a2e' }}>Pallets a desarmar</h2>
 
       {!vistaDetalle && (
@@ -180,6 +180,7 @@ export default function Pallets() {
                 No hay clientes configurados. Elegilos desde Admin → Pallets a desarmar.
               </div>
             ) : (
+              <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ background: '#f8f9fa' }}>
@@ -211,6 +212,7 @@ export default function Pallets() {
                   ))}
                 </tbody>
               </table>
+              </div>
             )}
           </div>
 
@@ -282,6 +284,7 @@ export default function Pallets() {
             {detalle.length === 0 ? (
               <div style={{ padding: '40px', textAlign: 'center', color: '#888' }}>No hay movimientos en este período</div>
             ) : (
+              <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ background: '#f8f9fa' }}>
@@ -302,6 +305,7 @@ export default function Pallets() {
                   ))}
                 </tbody>
               </table>
+              </div>
             )}
           </div>
         </div>

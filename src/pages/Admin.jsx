@@ -206,7 +206,7 @@ export default function Admin() {
   }
 
   return (
-    <div style={{ padding: '24px', maxWidth: '900px', margin: '0 auto' }}>
+    <div style={{ padding: 'clamp(12px,4vw,24px)', maxWidth: '900px', margin: '0 auto' }}>
       <h2 style={{ margin: '0 0 24px', color: '#1a1a2e' }}>Administración</h2>
 
       <div style={{ display: 'flex', gap: '8px', marginBottom: '24px', flexWrap: 'wrap' }}>
@@ -262,6 +262,7 @@ export default function Admin() {
           )}
           {cargando ? <div style={{ textAlign: 'center', padding: '40px', color: '#888' }}>Cargando...</div> : (
             <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', overflow: 'hidden' }}>
+              <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ background: '#f8f9fa' }}>
@@ -293,6 +294,7 @@ export default function Admin() {
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           )}
         </div>
@@ -322,7 +324,8 @@ export default function Admin() {
             </div>
           )}
           <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', overflow: 'hidden' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: '#f8f9fa' }}>
                   {['Orden', 'Nombre', 'Estado', 'Acciones'].map(h => (
@@ -362,6 +365,7 @@ export default function Admin() {
                 )}
               </tbody>
             </table>
+              </div>
           </div>
         </div>
       )}
@@ -391,7 +395,8 @@ export default function Admin() {
             </div>
           )}
           <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', overflow: 'hidden' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: '#f8f9fa' }}>
                   {['Nombre', 'Acciones'].map(h => (
@@ -420,6 +425,7 @@ export default function Admin() {
                 )}
               </tbody>
             </table>
+              </div>
           </div>
         </div>
       )}

@@ -18,6 +18,7 @@ export default function Layout() {
   const navItems = [
     { path: '/', label: '🚚 Planillas' },
     { path: '/pallets', label: '📦 Pallets a desarmar', roles: ['admin', 'operador'] },
+    { path: '/retiros-precargados', label: '📋 Retiros precargados', roles: ['admin', 'operador'] },
     { path: '/informes', label: '📊 Informes', roles: ['admin', 'operador'] },
     { path: '/admin', label: '⚙️ Admin', roles: ['admin'] },
   ].filter(item => !item.roles || item.roles.includes(usuario?.rol))

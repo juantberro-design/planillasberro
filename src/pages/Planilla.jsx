@@ -111,6 +111,8 @@ export default function Planilla() {
   const [guardado, setGuardado] = useState(false)
   const [confirmarReinicio, setConfirmarReinicio] = useState(null)
   const [okStates, setOkStates] = useState(Array(8).fill(false))
+  const [avisoPlantilla, setAvisoPlantilla] = useState('') // mensaje de éxito/error al cargar plantilla
+  const [cargandoPlantilla, setCargandoPlantilla] = useState(false)
 
   // Datos viven completamente fuera de React en refs
   const datos = useRef({
@@ -220,6 +222,44 @@ export default function Planilla() {
     datos.current[seccion][i][campo] = valor
     setSnapshot(JSON.parse(JSON.stringify(datos.current)))
     programar(delay)
+  }
+
+  // Verifica si la planilla actual (este chofer/turno/fecha) tiene algo cargado en Levantes.
+  // Solo Levantes importa para esta validación, ya que es lo que la plantilla precargada llena.
+  function planillaTieneAlgoEnLevantes() {
+    return datos.current.levantes.some(l => l.cliente && l.cliente.trim())
+  }
+
+  async function cargarPlantillaPrecargada() {
+    setAvisoPlantilla('')
+    if (planillaTieneAlgoEnLevantes()) {
+      setAvisoPlantilla('Esta planilla ya tiene clientes cargados en Levantes. Borrá los datos a mano si querés reemplazarlos por la plantilla precargada.')
+      return
+    }
+    setCargandoPlantilla(true)
+    try {
+      const ref = doc(db, 'retirosPrecargados', `${choferId}_${turno}`)
+      const snap = await getDoc(ref)
+      if (!snap.exists() || !(snap.data().clientes || []).length) {
+        setAvisoPlantilla('No hay una plantilla precargada guardada para este chofer y turno. Podés crearla desde Admin → Retiros precargados.')
+        setCargandoPlantilla(false)
+        return
+      }
+      const clientesPlantilla = snap.data().clientes
+      const nuevosLevantes = clientesPlantilla.map(cliente => ({ ...levanteVacio(), cliente }))
+      // Si la plantilla tiene más clientes que filas actuales, se agregan filas extra
+      while (nuevosLevantes.length < datos.current.levantes.length) {
+        nuevosLevantes.push(levanteVacio())
+      }
+      datos.current.levantes = nuevosLevantes
+      setSnapshot(JSON.parse(JSON.stringify(datos.current)))
+      programar(0)
+      setAvisoPlantilla(`Se cargaron ${clientesPlantilla.length} cliente${clientesPlantilla.length !== 1 ? 's' : ''} de la plantilla.`)
+      setTimeout(() => setAvisoPlantilla(''), 4000)
+    } catch (e) {
+      setAvisoPlantilla('Error al cargar la plantilla. Probá de nuevo.')
+    }
+    setCargandoPlantilla(false)
   }
 
   function horaActual() {
@@ -512,7 +552,20 @@ export default function Planilla() {
 
       {/* LEVANTES */}
       <div style={{ background:'white', borderRadius:'12px', padding:'20px', marginBottom:'20px', boxShadow:'0 1px 4px rgba(0,0,0,0.06)' }}>
-        <h3 style={{ margin:'0 0 16px', color:'#1a1a2e' }}>Levantes</h3>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'12px', flexWrap:'wrap', gap:'10px' }}>
+          <h3 style={{ margin:0, color:'#1a1a2e' }}>Levantes</h3>
+          {esOficina && (
+            <button onClick={cargarPlantillaPrecargada} disabled={cargandoPlantilla}
+              style={{ padding:'8px 16px', background:'#ebf8ff', color:'#3182ce', border:'1px solid #3182ce', borderRadius:'8px', fontSize:'13px', fontWeight:'600', cursor: cargandoPlantilla ? 'not-allowed' : 'pointer' }}>
+              {cargandoPlantilla ? 'Cargando...' : '📋 Cargar planilla precargada'}
+            </button>
+          )}
+        </div>
+        {avisoPlantilla && (
+          <div style={{ background: avisoPlantilla.startsWith('Se cargaron') ? '#e6ffed' : '#fff3cd', color: avisoPlantilla.startsWith('Se cargaron') ? '#276749' : '#856404', padding:'10px 14px', borderRadius:'8px', fontSize:'13px', marginBottom:'14px' }}>
+            {avisoPlantilla}
+          </div>
+        )}
         {esOficina && <div style={{ overflowX:'auto' }}><HeaderLevante />{levantes.map((l,i)=><FilaLevante key={i} l={l} i={i} seccion="levantes" clienteEditable={true} oficina={true} />)}</div>}
         {esChofer && (levantesChofer.length===0
           ? <p style={{ color:'#888', fontSize:'14px' }}>No hay clientes cargados para este turno todavía.</p>

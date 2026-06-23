@@ -8,6 +8,7 @@ import Admin from './pages/Admin'
 import Informes from './pages/Informes'
 import ImprimirPlanillas from './pages/ImprimirPlanillas'
 import RetirosTurno from './pages/RetirosTurno'
+import RetirosPrecargados from './pages/RetirosPrecargados'
 import Layout from './components/Layout'
 
 function PrivateRoute({ children, roles }) {
@@ -48,6 +49,11 @@ export default function App() {
           <Route path="retiros" element={
             <PrivateRoute roles={['admin','operador']}>
               <RetirosTurno />
+            </PrivateRoute>
+          } />
+          <Route path="retiros-precargados" element={
+            <PrivateRoute roles={['admin','operador']}>
+              <RetirosPrecargados />
             </PrivateRoute>
           } />
           <Route path="admin" element={

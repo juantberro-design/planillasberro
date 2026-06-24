@@ -8,12 +8,47 @@ function hoy() {
   return new Date().toISOString().split('T')[0]
 }
 
+// Un levante/cliente puntual cuenta como "completo" si tiene cliente + ambos horarios + bultos
+function levanteCompleto(l) {
+  return !!(l.cliente && l.horaLlegada && l.horaSalida && l.bultos)
+}
+
+// Una entrega cuenta como "completa" si tiene remitente o destinatario Y el chofer la marcó OK
+function entregaCompleta(e) {
+  return !!((e.remitente || e.destinatario) && e.ok)
+}
+
+function calcularProgreso(data) {
+  const levantesConCliente = (data?.levantes || []).filter(l => l.cliente)
+  const puntualesConCliente = (data?.clientesPuntuales || []).filter(l => l.cliente)
+  const entregasConDatos = (data?.entregas || []).filter(e => e.remitente || e.destinatario)
+
+  return {
+    levantes: { hechos: levantesConCliente.filter(levanteCompleto).length, total: levantesConCliente.length },
+    puntuales: { hechos: puntualesConCliente.filter(levanteCompleto).length, total: puntualesConCliente.length },
+    entregas: { hechos: entregasConDatos.filter(entregaCompleta).length, total: entregasConDatos.length }
+  }
+}
+
+function ProgresoLinea({ label, valor }) {
+  if (valor.total === 0) return null
+  const completo = valor.hechos === valor.total
+  return (
+    <div style={{ fontSize: '11px', fontWeight: '700', color: completo ? '#38a169' : '#444', whiteSpace: 'nowrap' }}>
+      {label} {valor.hechos}/{valor.total}
+    </div>
+  )
+}
+
 export default function Dashboard() {
   const { usuario } = useAuth()
   const navigate = useNavigate()
   const [fecha, setFecha] = useState(hoy())
+  const [turno, setTurno] = useState('mañana')
   const [choferes, setChoferes] = useState([])
+  const [progresoPorChofer, setProgresoPorChofer] = useState({}) // { choferId: { levantes, puntuales, entregas } }
   const [cargando, setCargando] = useState(true)
+  const [cargandoProgreso, setCargandoProgreso] = useState(false)
 
   // Buscador
   const [busqueda, setBusqueda] = useState('')
@@ -36,9 +71,40 @@ export default function Dashboard() {
     cargarChoferes()
   }, [])
 
+  useEffect(() => {
+    if (esOficina && choferes.length > 0) cargarProgreso()
+  }, [fecha, turno, choferes, esOficina])
+
+  async function cargarProgreso() {
+    setCargandoProgreso(true)
+    try {
+      const snap = await getDocs(collection(db, 'planillas', fecha, 'choferes'))
+      const mapa = {}
+      snap.forEach(docSnap => {
+        const parts = docSnap.id.split('_')
+        const choferId = parts[0]
+        const turnoDoc = parts[1]
+        if (turnoDoc !== turno) return
+        mapa[choferId] = calcularProgreso(docSnap.data())
+      })
+      setProgresoPorChofer(mapa)
+    } catch {
+      setProgresoPorChofer({})
+    }
+    setCargandoProgreso(false)
+  }
+
   const choferesFiltrados = esChofer
     ? choferes.filter(c => c.id === usuario.choferId)
     : choferes
+
+  // Totales generales sumando todos los choferes del turno seleccionado
+  const totales = Object.values(progresoPorChofer).reduce((acc, p) => {
+    acc.levantes.hechos += p.levantes.hechos; acc.levantes.total += p.levantes.total
+    acc.puntuales.hechos += p.puntuales.hechos; acc.puntuales.total += p.puntuales.total
+    acc.entregas.hechos += p.entregas.hechos; acc.entregas.total += p.entregas.total
+    return acc
+  }, { levantes: { hechos: 0, total: 0 }, puntuales: { hechos: 0, total: 0 }, entregas: { hechos: 0, total: 0 } })
 
   async function buscarCliente() {
     if (!busqueda.trim()) return
@@ -53,7 +119,7 @@ export default function Dashboard() {
         const data = docSnap.data()
         const parts = docSnap.id.split('_')
         const choferId = parts[0]
-        const turno = parts[1]
+        const turnoDoc = parts[1]
         const choferReal = choferes.find(c => c.id === choferId)
         const choferNombre = choferReal ? choferReal.nombre : choferId
 
@@ -67,7 +133,7 @@ export default function Dashboard() {
             resultados.push({
               choferId,
               choferNombre,
-              turno,
+              turno: turnoDoc,
               cliente: l.cliente,
               seccion: l.seccion,
               horaLlegada: l.horaLlegada,
@@ -88,7 +154,7 @@ export default function Dashboard() {
 
   return (
     <div style={{ padding: 'clamp(12px, 4vw, 24px)', maxWidth: '900px', margin: '0 auto' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
         <h2 style={{ margin: 0, color: '#1a1a2e' }}>Planillas del día</h2>
         <input
           type="date"
@@ -97,6 +163,31 @@ export default function Dashboard() {
           style={{ padding: '8px 12px', border: '1px solid #ddd', borderRadius: '8px', fontSize: '15px' }}
         />
       </div>
+
+      {/* SELECTOR DE TURNO + TOTALES — solo oficina */}
+      {esOficina && (
+        <div style={{ background: 'white', borderRadius: '12px', padding: '14px 18px', marginBottom: '20px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            {['mañana', 'tarde'].map(t => (
+              <button key={t} onClick={() => setTurno(t)}
+                style={{ padding: '9px 18px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: '600', fontSize: '14px', background: turno === t ? '#1a1a2e' : '#e2e8f0', color: turno === t ? 'white' : '#444' }}>
+                {t.charAt(0).toUpperCase() + t.slice(1)}
+              </button>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+            {cargandoProgreso ? (
+              <span style={{ fontSize: '13px', color: '#888' }}>Calculando totales...</span>
+            ) : (
+              <>
+                <ProgresoLinea label="Total Levantes" valor={totales.levantes} />
+                <ProgresoLinea label="Total Entregas" valor={totales.entregas} />
+                <ProgresoLinea label="Total Puntuales" valor={totales.puntuales} />
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* BUSCADOR — solo para admin/operador */}
       {esOficina && (
@@ -181,20 +272,30 @@ export default function Dashboard() {
           No hay choferes activos. Agregá choferes desde el panel de Admin.
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '12px' }}>
-          {choferesFiltrados.map(chofer => (
-            <div
-              key={chofer.id}
-              onClick={() => navigate(`/planilla/${fecha}/${chofer.id}`)}
-              style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}
-              onMouseOver={e => e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.12)'}
-              onMouseOut={e => e.currentTarget.style.boxShadow = '0 1px 4px rgba(0,0,0,0.06)'}
-            >
-              <div style={{ fontSize: '28px', marginBottom: '8px' }}>🚚</div>
-              <div style={{ fontWeight: '600', color: '#1a1a2e' }}>{chofer.nombre}</div>
-              <div style={{ fontSize: '13px', color: '#888', marginTop: '4px' }}>{fecha}</div>
-            </div>
-          ))}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: '12px' }}>
+          {choferesFiltrados.map(chofer => {
+            const progreso = progresoPorChofer[chofer.id]
+            return (
+              <div
+                key={chofer.id}
+                onClick={() => navigate(`/planilla/${fecha}/${chofer.id}${esOficina ? `?turno=${turno}` : ''}`)}
+                style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', position: 'relative' }}
+                onMouseOver={e => e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.12)'}
+                onMouseOut={e => e.currentTarget.style.boxShadow = '0 1px 4px rgba(0,0,0,0.06)'}
+              >
+                {esOficina && progreso && (
+                  <div style={{ position: 'absolute', top: '10px', right: '10px', textAlign: 'right' }}>
+                    <ProgresoLinea label="Levantes" valor={progreso.levantes} />
+                    <ProgresoLinea label="Entregas" valor={progreso.entregas} />
+                    <ProgresoLinea label="Puntuales" valor={progreso.puntuales} />
+                  </div>
+                )}
+                <div style={{ fontSize: '28px', marginBottom: '8px' }}>🚚</div>
+                <div style={{ fontWeight: '600', color: '#1a1a2e' }}>{chofer.nombre}</div>
+                <div style={{ fontSize: '13px', color: '#888', marginTop: '4px' }}>{fecha}{esOficina ? ` · ${turno}` : ''}</div>
+              </div>
+            )
+          })}
         </div>
       )}
     </div>

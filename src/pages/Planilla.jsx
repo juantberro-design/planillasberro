@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { doc, getDoc, setDoc, addDoc, serverTimestamp, collection, getDocs, increment } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useAuth } from '../hooks/useAuth.jsx'
@@ -96,6 +96,7 @@ const LS = { fontSize:'12px', color:'#666', marginBottom:'4px', display:'block' 
 
 export default function Planilla() {
   const { fecha, choferId } = useParams()
+  const [searchParams] = useSearchParams()
   const { usuario } = useAuth()
   const navigate = useNavigate()
 
@@ -105,7 +106,7 @@ export default function Planilla() {
 
   const [nombreChofer, setNombreChofer] = useState('')
   const [todosClientes, setTodosClientes] = useState([])
-  const [turno, setTurno] = useState('mañana')
+  const [turno, setTurno] = useState(searchParams.get('turno') === 'tarde' ? 'tarde' : 'mañana')
   const [cargando, setCargando] = useState(true)
   const [guardando, setGuardando] = useState(false)
   const [guardado, setGuardado] = useState(false)

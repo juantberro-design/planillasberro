@@ -110,6 +110,7 @@ export default function Planilla() {
   const [guardando, setGuardando] = useState(false)
   const [guardado, setGuardado] = useState(false)
   const [confirmarReinicio, setConfirmarReinicio] = useState(null)
+  const [horaManualValor, setHoraManualValor] = useState('')
   const [okStates, setOkStates] = useState(Array(8).fill(false))
   const [avisoPlantilla, setAvisoPlantilla] = useState('') // mensaje de éxito/error al cargar plantilla
   const [cargandoPlantilla, setCargandoPlantilla] = useState(false)
@@ -269,6 +270,7 @@ export default function Planilla() {
   function marcarHora(seccion, i, campo) {
     const yaTiene = datos.current[seccion][i][campo]
     if (yaTiene) {
+      setHoraManualValor(yaTiene && yaTiene.includes(':') ? yaTiene : '')
       setConfirmarReinicio({ seccion, i, campo })
       return
     }
@@ -282,6 +284,15 @@ export default function Planilla() {
     const { seccion, i, campo } = confirmarReinicio
     const hora = horaActual()
     datos.current[seccion][i][campo] = hora
+    setSnapshot(JSON.parse(JSON.stringify(datos.current)))
+    setConfirmarReinicio(null)
+    programar(0)
+  }
+
+  function confirmarHoraManual(horaElegida) {
+    if (!horaElegida) return
+    const { seccion, i, campo } = confirmarReinicio
+    datos.current[seccion][i][campo] = horaElegida
     setSnapshot(JSON.parse(JSON.stringify(datos.current)))
     setConfirmarReinicio(null)
     programar(0)
@@ -652,11 +663,28 @@ export default function Planilla() {
       {/* MODAL REINICIO HORA */}
       {confirmarReinicio && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000, padding:'16px' }}>
-          <div style={{ background:'white', borderRadius:'12px', padding:'24px', maxWidth:'320px', width:'100%', textAlign:'center', boxShadow:'0 4px 20px rgba(0,0,0,0.2)' }}>
-            <p style={{ marginBottom:'20px', color:'#1a1a2e', fontSize:'15px' }}>Ya marcaste esta hora. ¿Querés reiniciarla a la hora actual?</p>
-            <div style={{ display:'flex', gap:'12px', justifyContent:'center' }}>
-              <button onClick={() => setConfirmarReinicio(null)} style={{ padding:'12px 20px', background:'#f0f0f0', color:'#444', border:'none', borderRadius:'8px', cursor:'pointer', fontWeight:'600', flex:1 }}>Cancelar</button>
-              <button onClick={confirmarReinicioHora} style={{ padding:'12px 20px', background:'#1a1a2e', color:'white', border:'none', borderRadius:'8px', cursor:'pointer', fontWeight:'600', flex:1 }}>Sí, reiniciar</button>
+          <div style={{ background:'white', borderRadius:'12px', padding:'24px', maxWidth:'340px', width:'100%', boxShadow:'0 4px 20px rgba(0,0,0,0.2)' }}>
+            <p style={{ marginBottom:'18px', color:'#1a1a2e', fontSize:'15px', textAlign:'center' }}>Ya marcaste esta hora. ¿Qué querés hacer?</p>
+
+            <div style={{ marginBottom:'16px' }}>
+              <label style={{ fontSize:'12px', color:'#666', marginBottom:'6px', display:'block' }}>Elegir hora manualmente</label>
+              <div style={{ display:'flex', gap:'8px' }}>
+                <input
+                  type="time"
+                  value={horaManualValor}
+                  onChange={e => setHoraManualValor(e.target.value)}
+                  style={{ flex:1, padding:'10px', border:'1px solid #ddd', borderRadius:'8px', fontSize:'16px', boxSizing:'border-box' }}
+                />
+                <button onClick={() => confirmarHoraManual(horaManualValor)} disabled={!horaManualValor}
+                  style={{ padding:'10px 16px', background: horaManualValor ? '#3182ce' : '#ccc', color:'white', border:'none', borderRadius:'8px', cursor: horaManualValor ? 'pointer' : 'not-allowed', fontWeight:'600', fontSize:'14px' }}>
+                  Usar
+                </button>
+              </div>
+            </div>
+
+            <div style={{ display:'flex', gap:'12px' }}>
+              <button onClick={() => setConfirmarReinicio(null)} style={{ padding:'12px 16px', background:'#f0f0f0', color:'#444', border:'none', borderRadius:'8px', cursor:'pointer', fontWeight:'600', flex:1, fontSize:'13px' }}>Cancelar</button>
+              <button onClick={confirmarReinicioHora} style={{ padding:'12px 16px', background:'#1a1a2e', color:'white', border:'none', borderRadius:'8px', cursor:'pointer', fontWeight:'600', flex:1, fontSize:'13px' }}>Reiniciar a ahora</button>
             </div>
           </div>
         </div>

@@ -8,6 +8,11 @@ function hoy() {
   return new Date().toISOString().split('T')[0]
 }
 
+// Antes de las 12:00 -> mañana, después -> tarde
+function turnoActual() {
+  return new Date().getHours() < 12 ? 'mañana' : 'tarde'
+}
+
 // Un levante/cliente puntual cuenta como "completo" si tiene cliente + ambos horarios + bultos
 function levanteCompleto(l) {
   return !!(l.cliente && l.horaLlegada && l.horaSalida && l.bultos)
@@ -44,7 +49,7 @@ export default function Dashboard() {
   const { usuario } = useAuth()
   const navigate = useNavigate()
   const [fecha, setFecha] = useState(hoy())
-  const [turno, setTurno] = useState('mañana')
+  const [turno, setTurno] = useState(turnoActual())
   const [choferes, setChoferes] = useState([])
   const [progresoPorChofer, setProgresoPorChofer] = useState({}) // { choferId: { levantes, puntuales, entregas } }
   const [cargando, setCargando] = useState(true)

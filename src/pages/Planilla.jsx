@@ -85,6 +85,8 @@ function calcularDeltasPallets(anterior, nuevo) {
 }
 
 function hoy() { return new Date().toISOString().split('T')[0] }
+// Antes de las 12:00 -> mañana, después -> tarde
+function turnoActual() { return new Date().getHours() < 12 ? 'mañana' : 'tarde' }
 const entregaVacia = () => ({ remitente:'', destinatario:'', aCobrar:'', bultos:'', remito:'', comentarios:'', ok:false })
 const levanteVacio = () => ({ cliente:'', horaLlegada:'', horaSalida:'', bultos:'', palletDesarmar:'', comChofer:'', comOficina:'', controlOk:false })
 const puntualVacio = () => ({ cliente:'', horaLlegada:'', horaSalida:'', bultos:'', palletDesarmar:'', comChofer:'', comOficina:'', controlOk:false })
@@ -106,7 +108,11 @@ export default function Planilla() {
 
   const [nombreChofer, setNombreChofer] = useState('')
   const [todosClientes, setTodosClientes] = useState([])
-  const [turno, setTurno] = useState(searchParams.get('turno') === 'tarde' ? 'tarde' : 'mañana')
+  const [turno, setTurno] = useState(
+    searchParams.get('turno') === 'tarde' ? 'tarde' :
+    searchParams.get('turno') === 'mañana' ? 'mañana' :
+    turnoActual()
+  )
   const [cargando, setCargando] = useState(true)
   const [guardando, setGuardando] = useState(false)
   const [guardado, setGuardado] = useState(false)

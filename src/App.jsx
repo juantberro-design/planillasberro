@@ -9,6 +9,7 @@ import Informes from './pages/Informes'
 import ImprimirPlanillas from './pages/ImprimirPlanillas'
 import RetirosTurno from './pages/RetirosTurno'
 import RetirosPrecargados from './pages/RetirosPrecargados'
+import Configuracion from './pages/Configuracion'
 import Layout from './components/Layout'
 
 function PrivateRoute({ children, roles }) {
@@ -61,6 +62,7 @@ export default function App() {
               <Admin />
             </PrivateRoute>
           } />
+          <Route path="configuracion" element={<Configuracion />} />
         </Route>
       </Routes>
     </BrowserRouter>

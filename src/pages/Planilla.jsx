@@ -85,7 +85,7 @@ function calcularDeltasPallets(anterior, nuevo) {
 }
 
 function hoy() { return new Date().toISOString().split('T')[0] }
-const entregaVacia = () => ({ remitente:'', destinatario:'', aCobrar:'', bultos:'', comentarios:'', ok:false })
+const entregaVacia = () => ({ remitente:'', destinatario:'', aCobrar:'', bultos:'', remito:'', comentarios:'', ok:false })
 const levanteVacio = () => ({ cliente:'', horaLlegada:'', horaSalida:'', bultos:'', palletDesarmar:'', comChofer:'', comOficina:'', controlOk:false })
 const puntualVacio = () => ({ cliente:'', horaLlegada:'', horaSalida:'', bultos:'', palletDesarmar:'', comChofer:'', comOficina:'', controlOk:false })
 const devVacia = () => ({ cliente:'', cantidad:'' })
@@ -328,7 +328,7 @@ export default function Planilla() {
   function FilaLevante({ l, i, seccion, clienteEditable, oficina }) {
     const controlOk = snapshot[seccion][i]?.controlOk || false
     return (
-      <div style={{ display:'grid', gridTemplateColumns:'1.3fr 90px 90px 70px 90px 1fr 1fr 44px', gap:'6px', marginBottom:'8px', alignItems:'end' }}>
+      <div style={{ display:'grid', gridTemplateColumns:'1.3fr 90px 90px 70px 90px 1fr 1fr 44px', gap:'6px', marginBottom:'8px', alignItems:'end', background: controlOk ? '#e6ffed' : 'transparent', borderRadius:'8px', padding:'4px', boxSizing:'border-box' }}>
         <div>
           {clienteEditable ? (
             <SelectorCliente
@@ -397,7 +397,7 @@ export default function Planilla() {
   function TarjetaLevanteChofer({ l, i, seccion }) {
     return (
       <div style={{
-        background:'#f8f9fa', border:'1px solid #e2e8f0', borderRadius:'10px',
+        background: l.controlOk ? '#e6ffed' : '#f8f9fa', border: `1px solid ${l.controlOk ? '#a3e8b8' : '#e2e8f0'}`, borderRadius:'10px',
         padding:'14px', marginBottom:'12px'
       }}>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'12px' }}>
@@ -492,11 +492,12 @@ export default function Planilla() {
         <div style={{ background:'white', borderRadius:'12px', padding:'20px', marginBottom:'20px', boxShadow:'0 1px 4px rgba(0,0,0,0.06)' }}>
           <h3 style={{ margin:'0 0 16px', color:'#1a1a2e' }}>Entregas</h3>
           {entregas.map((e, i) => (
-            <div key={i} style={{ display:'grid', gridTemplateColumns:'1fr 1fr 100px 80px 1fr', gap:'8px', marginBottom:'10px', alignItems:'end' }}>
+            <div key={i} style={{ display:'grid', gridTemplateColumns:'1fr 1fr 100px 80px 110px 1fr', gap:'8px', marginBottom:'10px', alignItems:'end', background: snapshot.entregas[i]?.ok ? '#e6ffed' : 'transparent', borderRadius:'8px', padding:'4px', boxSizing:'border-box' }}>
               <div>{i===0&&<label style={LS}>Remitente</label>}<Campo seccion="entregas" i={i} campo="remitente" delay={5000} /></div>
               <div>{i===0&&<label style={LS}>Destinatario</label>}<Campo seccion="entregas" i={i} campo="destinatario" delay={5000} /></div>
               <div>{i===0&&<label style={LS}>A cobrar</label>}<Campo seccion="entregas" i={i} campo="aCobrar" delay={5000} /></div>
               <div>{i===0&&<label style={LS}>Bultos</label>}<Campo seccion="entregas" i={i} campo="bultos" type="number" delay={3000} /></div>
+              <div>{i===0&&<label style={LS}>N° remito</label>}<Campo seccion="entregas" i={i} campo="remito" delay={5000} /></div>
               <div>{i===0&&<label style={LS}>Comentarios</label>}<Campo seccion="entregas" i={i} campo="comentarios" delay={5000} /></div>
             </div>
           ))}
@@ -513,7 +514,7 @@ export default function Planilla() {
             {entregasChofer.map(e => {
               const i = e._i
               return (
-                <div key={i} style={{ background:'#f8f9fa', border:'1px solid #e2e8f0', borderRadius:'10px', padding:'14px', marginBottom:'12px' }}>
+                <div key={i} style={{ background: okStates[i] ? '#e6ffed' : '#f8f9fa', border: `1px solid ${okStates[i] ? '#a3e8b8' : '#e2e8f0'}`, borderRadius:'10px', padding:'14px', marginBottom:'12px' }}>
                   <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'10px' }}>
                     <span style={{ fontWeight:'700', fontSize:'15px', color:'#1a1a2e' }}>{e.remitente} → {e.destinatario}</span>
                     <button disabled={soloLectura}
@@ -525,6 +526,7 @@ export default function Planilla() {
                   <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'8px', marginBottom:'10px', fontSize:'13px', color:'#666' }}>
                     <div><strong>A cobrar:</strong> {e.aCobrar || '-'}</div>
                     <div><strong>Bultos:</strong> {e.bultos || '-'}</div>
+                    <div><strong>N° remito:</strong> {e.remito || '-'}</div>
                   </div>
                   <label style={LS}>Comentario</label>
                   <Campo seccion="entregas" i={i} campo="comentarios" delay={5000} disabled={soloLectura} placeholder="Comentario..." />
@@ -535,17 +537,18 @@ export default function Planilla() {
 
           {/* Tabla — desktop */}
           <div className="berro-tabla-chofer" style={{ overflowX:'auto' }}>
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 100px 80px 1fr 60px', gap:'8px', marginBottom:'4px' }}>
-              {['Remitente','Destinatario','A cobrar','Bultos','Comentarios','OK'].map(h=><label key={h} style={LS}>{h}</label>)}
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 100px 80px 110px 1fr 60px', gap:'8px', marginBottom:'4px' }}>
+              {['Remitente','Destinatario','A cobrar','Bultos','N° remito','Comentarios','OK'].map(h=><label key={h} style={LS}>{h}</label>)}
             </div>
             {entregasChofer.map(e => {
               const i = e._i
               return (
-                <div key={i} style={{ display:'grid', gridTemplateColumns:'1fr 1fr 100px 80px 1fr 60px', gap:'8px', marginBottom:'8px', alignItems:'center' }}>
+                <div key={i} style={{ display:'grid', gridTemplateColumns:'1fr 1fr 100px 80px 110px 1fr 60px', gap:'8px', marginBottom:'8px', alignItems:'center', background: okStates[i] ? '#e6ffed' : 'transparent', borderRadius:'8px', padding:'4px', boxSizing:'border-box' }}>
                   <div style={{...ISD, display:'flex', alignItems:'center'}}>{e.remitente}</div>
                   <div style={{...ISD, display:'flex', alignItems:'center'}}>{e.destinatario}</div>
                   <div style={{...ISD, display:'flex', alignItems:'center'}}>{e.aCobrar}</div>
                   <div style={{...ISD, display:'flex', alignItems:'center'}}>{e.bultos}</div>
+                  <div style={{...ISD, display:'flex', alignItems:'center'}}>{e.remito}</div>
                   <Campo seccion="entregas" i={e._i} campo="comentarios" delay={5000} disabled={soloLectura} placeholder="Comentario..." />
                   <div style={{ display:'flex', justifyContent:'center' }}>
                     <button disabled={soloLectura}
@@ -603,7 +606,7 @@ export default function Planilla() {
             {['Cliente','Llegada','Salida','Bultos','Pallets a desarmar','Com. chofer','Com. oficina','✓'].map(h=><label key={h} style={LS}>{h}</label>)}
           </div>
           {clientesPuntuales.map((l,i) => (
-            <div key={i} style={{ display:'grid', gridTemplateColumns:'1.3fr 90px 90px 70px 90px 1fr 1fr 44px', gap:'6px', marginBottom:'8px', alignItems:'end' }}>
+            <div key={i} style={{ display:'grid', gridTemplateColumns:'1.3fr 90px 90px 70px 90px 1fr 1fr 44px', gap:'6px', marginBottom:'8px', alignItems:'end', background: snapshot.clientesPuntuales[i]?.controlOk ? '#e6ffed' : 'transparent', borderRadius:'8px', padding:'4px', boxSizing:'border-box' }}>
               <Campo seccion="clientesPuntuales" i={i} campo="cliente" delay={5000} placeholder="Nombre cliente" />
               <Campo seccion="clientesPuntuales" i={i} campo="horaLlegada" delay={3000} placeholder="HH:MM" />
               <Campo seccion="clientesPuntuales" i={i} campo="horaSalida" delay={3000} placeholder="HH:MM" />

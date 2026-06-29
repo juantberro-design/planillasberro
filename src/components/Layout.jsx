@@ -21,6 +21,7 @@ export default function Layout() {
     { path: '/retiros-precargados', label: '📋 Retiros precargados', roles: ['admin', 'operador'] },
     { path: '/informes', label: '📊 Informes', roles: ['admin', 'operador'] },
     { path: '/admin', label: '⚙️ Admin', roles: ['admin'] },
+    { path: '/configuracion', label: '🔧 Configuración' },
   ].filter(item => !item.roles || item.roles.includes(usuario?.rol))
 
   function ir(path) {

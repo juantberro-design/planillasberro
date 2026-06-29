@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { collection, getDocs, doc, setDoc, updateDoc, deleteDoc, getDoc, query, orderBy } from 'firebase/firestore'
+import { collection, getDocs, doc, setDoc, updateDoc, deleteDoc, getDoc, query, orderBy, increment } from 'firebase/firestore'
 import { db } from '../firebase'
 
 const ROLES = ['admin', 'operador', 'chofer']
@@ -30,6 +30,10 @@ export default function Admin() {
   const [choferes, setChoferes] = useState([])
   const [clientes, setClientes] = useState([])
   const [clientesPallets, setClientesPallets] = useState([])
+  const [saldosPallets, setSaldosPallets] = useState({}) // { clienteNombre: { rec, dev } }
+  const [ajustesInput, setAjustesInput] = useState({}) // { clienteNombre: 'texto del input' }
+  const [ajustando, setAjustando] = useState(null)
+  const [avisoAjuste, setAvisoAjuste] = useState('')
   const [cargando, setCargando] = useState(true)
   const [mostrarFormUsuario, setMostrarFormUsuario] = useState(false)
   const [mostrarFormChofer, setMostrarFormChofer] = useState(false)
@@ -52,6 +56,41 @@ export default function Admin() {
   const [histEntradaSeleccionada, setHistEntradaSeleccionada] = useState(null)
 
   useEffect(() => { cargarDatos() }, [])
+  useEffect(() => { if (tab === 'pallets' && clientesPallets.length > 0) cargarSaldosPallets() }, [tab, clientesPallets])
+
+  async function cargarSaldosPallets() {
+    const lecturas = await Promise.all(
+      clientesPallets.map(cliente => {
+        const idCliente = cliente.toLowerCase().replace(/\s+/g, '-')
+        return getDoc(doc(db, 'saldosPallets', idCliente))
+      })
+    )
+    const mapa = {}
+    clientesPallets.forEach((cliente, i) => {
+      const snap = lecturas[i]
+      mapa[cliente] = snap.exists() ? { rec: snap.data().rec || 0, dev: snap.data().dev || 0 } : { rec: 0, dev: 0 }
+    })
+    setSaldosPallets(mapa)
+  }
+
+  async function ajustarSaldo(cliente, tipo) {
+    const valorTexto = ajustesInput[cliente]
+    const valor = Number(valorTexto)
+    if (!valorTexto || isNaN(valor) || valor === 0) {
+      setAvisoAjuste('Ingresá un número distinto de cero (puede ser negativo).')
+      setTimeout(() => setAvisoAjuste(''), 3000)
+      return
+    }
+    setAjustando(cliente)
+    const idCliente = cliente.toLowerCase().replace(/\s+/g, '-')
+    await setDoc(doc(db, 'saldosPallets', idCliente), {
+      cliente,
+      [tipo]: increment(valor)
+    }, { merge: true })
+    setAjustesInput(prev => ({ ...prev, [cliente]: '' }))
+    await cargarSaldosPallets()
+    setAjustando(null)
+  }
 
   async function cargarDatos() {
     setCargando(true)
@@ -433,7 +472,7 @@ export default function Admin() {
       {tab === 'pallets' && (
         <div>
           <p style={{ color: '#666', marginBottom: '16px', fontSize: '14px' }}>Seleccioná los clientes que aparecen por defecto en el resumen de pallets a desarmar.</p>
-          <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+          <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: '24px' }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '12px' }}>
               {clientes.map(c => (
                 <div key={c.id} onClick={() => toggleClientePallets(c.nombre)}
@@ -446,6 +485,59 @@ export default function Admin() {
               <p style={{ color: '#888', textAlign: 'center', padding: '20px' }}>Primero agregá clientes en la pestaña "Clientes".</p>
             )}
           </div>
+
+          {clientesPallets.length > 0 && (
+            <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+              <h3 style={{ margin: '0 0 6px', color: '#1a1a2e', fontSize: '16px' }}>Ajustar saldos manualmente</h3>
+              <p style={{ margin: '0 0 18px', fontSize: '13px', color: '#888' }}>
+                Sumá o restá una cantidad al recibido o al devuelto de cada cliente. Usá números negativos para restar (ej: -3).
+              </p>
+
+              {avisoAjuste && (
+                <div style={{ background: '#fff3cd', color: '#856404', padding: '10px 14px', borderRadius: '8px', fontSize: '13px', marginBottom: '14px' }}>
+                  {avisoAjuste}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {clientesPallets.map(cliente => {
+                  const saldo = saldosPallets[cliente]
+                  const saldoNeto = saldo ? saldo.rec - saldo.dev : 0
+                  return (
+                    <div key={cliente} style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '14px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                      <div style={{ minWidth: '140px', flex: '1 1 140px' }}>
+                        <div style={{ fontWeight: '700', color: '#1a1a2e' }}>{cliente}</div>
+                        {saldo && (
+                          <div style={{ fontSize: '12px', color: '#666' }}>
+                            REC: {saldo.rec} · DEV: {saldo.dev} · Saldo: <strong style={{ color: saldoNeto > 0 ? '#e53e3e' : saldoNeto < 0 ? '#38a169' : '#666' }}>{saldoNeto > 0 ? `+${saldoNeto}` : saldoNeto}</strong>
+                          </div>
+                        )}
+                      </div>
+                      <input
+                        type="number"
+                        placeholder="+5 o -3"
+                        value={ajustesInput[cliente] || ''}
+                        onChange={e => setAjustesInput(prev => ({ ...prev, [cliente]: e.target.value }))}
+                        style={{ width: '90px', padding: '8px 10px', border: '1px solid #ddd', borderRadius: '8px', fontSize: '14px' }}
+                      />
+                      <button
+                        disabled={ajustando === cliente}
+                        onClick={() => ajustarSaldo(cliente, 'rec')}
+                        style={{ padding: '8px 14px', background: '#fff5f5', color: '#e53e3e', border: '1px solid #e53e3e', borderRadius: '8px', fontSize: '13px', fontWeight: '600', cursor: ajustando === cliente ? 'not-allowed' : 'pointer' }}>
+                        Ajustar Recibido
+                      </button>
+                      <button
+                        disabled={ajustando === cliente}
+                        onClick={() => ajustarSaldo(cliente, 'dev')}
+                        style={{ padding: '8px 14px', background: '#e6ffed', color: '#38a169', border: '1px solid #38a169', borderRadius: '8px', fontSize: '13px', fontWeight: '600', cursor: ajustando === cliente ? 'not-allowed' : 'pointer' }}>
+                        Ajustar Devuelto
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
       {tab === 'historial' && (

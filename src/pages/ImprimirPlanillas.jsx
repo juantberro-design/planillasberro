@@ -203,7 +203,7 @@ export default function ImprimirPlanillas() {
               <div style={{ fontWeight: '700', fontSize: '12px', marginBottom: '4px', textTransform: 'uppercase', color: '#444' }}>Entregas</div>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead><tr>
-                  {['Remitente','Destinatario','A cobrar','Bultos','Comentarios'].map(h => <th key={h} style={thS}>{h}</th>)}
+                  {['Remitente','Destinatario','A cobrar','Bultos','N° remito','Comentarios'].map(h => <th key={h} style={thS}>{h}</th>)}
                 </tr></thead>
                 <tbody>
                   {hoja.data.entregas.filter(e => e.remitente || e.destinatario).map((e, i) => (
@@ -212,6 +212,7 @@ export default function ImprimirPlanillas() {
                       <td style={tdS}>{e.destinatario}</td>
                       <td style={tdS}>{e.aCobrar}</td>
                       <td style={tdS}>{e.bultos}</td>
+                      <td style={tdS}>{e.remito}</td>
                       <td style={tdS}>{e.comentarios}</td>
                     </tr>
                   ))}

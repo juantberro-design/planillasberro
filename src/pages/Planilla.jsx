@@ -355,7 +355,7 @@ export default function Planilla() {
               {l.horaLlegada || '⏱'}
             </button>
           ) : (
-            <Campo seccion={seccion} i={i} campo="horaLlegada" delay={3000} disabled={soloLectura} placeholder="HH:MM" />
+            <Campo seccion={seccion} i={i} campo="horaLlegada" type="time" delay={0} disabled={soloLectura} />
           )}
         </div>
         <div>
@@ -365,7 +365,7 @@ export default function Planilla() {
               {l.horaSalida || '⏱'}
             </button>
           ) : (
-            <Campo seccion={seccion} i={i} campo="horaSalida" delay={3000} disabled={soloLectura} placeholder="HH:MM" />
+            <Campo seccion={seccion} i={i} campo="horaSalida" type="time" delay={0} disabled={soloLectura} />
           )}
         </div>
         <div><Campo seccion={seccion} i={i} campo="bultos" type="number" delay={3000} disabled={soloLectura} /></div>
@@ -614,8 +614,8 @@ export default function Planilla() {
           {clientesPuntuales.map((l,i) => (
             <div key={i} style={{ display:'grid', gridTemplateColumns:'1.3fr 90px 90px 70px 90px 1fr 1fr 44px', gap:'6px', marginBottom:'8px', alignItems:'end', background: snapshot.clientesPuntuales[i]?.controlOk ? '#e6ffed' : 'transparent', borderRadius:'8px', padding:'4px', boxSizing:'border-box' }}>
               <Campo seccion="clientesPuntuales" i={i} campo="cliente" delay={5000} placeholder="Nombre cliente" />
-              <Campo seccion="clientesPuntuales" i={i} campo="horaLlegada" delay={3000} placeholder="HH:MM" />
-              <Campo seccion="clientesPuntuales" i={i} campo="horaSalida" delay={3000} placeholder="HH:MM" />
+              <Campo seccion="clientesPuntuales" i={i} campo="horaLlegada" type="time" delay={0} />
+              <Campo seccion="clientesPuntuales" i={i} campo="horaSalida" type="time" delay={0} />
               <Campo seccion="clientesPuntuales" i={i} campo="bultos" type="number" delay={3000} />
               <Campo seccion="clientesPuntuales" i={i} campo="palletDesarmar" type="number" delay={3000} />
               <Campo seccion="clientesPuntuales" i={i} campo="comChofer" delay={5000} placeholder="..." />

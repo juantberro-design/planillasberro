@@ -118,13 +118,13 @@ export default function Planilla() {
   const [guardado, setGuardado] = useState(false)
   const [confirmarReinicio, setConfirmarReinicio] = useState(null)
   const [horaManualValor, setHoraManualValor] = useState('')
-  const [okStates, setOkStates] = useState(Array(8).fill(false))
+  const [okStates, setOkStates] = useState([false])
   const [avisoPlantilla, setAvisoPlantilla] = useState('') // mensaje de éxito/error al cargar plantilla
   const [cargandoPlantilla, setCargandoPlantilla] = useState(false)
 
   // Datos viven completamente fuera de React en refs
   const datos = useRef({
-    entregas: Array(8).fill(null).map(entregaVacia),
+    entregas: [entregaVacia()],
     levantes: Array(9).fill(null).map(levanteVacio),
     clientesPuntuales: Array(4).fill(null).map(puntualVacio),
     devoluciones: Array(3).fill(null).map(devVacia)
@@ -161,7 +161,7 @@ export default function Planilla() {
     if (snap.exists()) {
       const d = snap.data()
       datos.current = {
-        entregas: (d.entregas||Array(8).fill(null).map(entregaVacia)).map(x=>({...entregaVacia(),...x})),
+        entregas: (d.entregas||[entregaVacia()]).map(x=>({...entregaVacia(),...x})),
         levantes: (d.levantes||Array(9).fill(null).map(levanteVacio)).map(x=>({...levanteVacio(),...x})),
         clientesPuntuales: (d.clientesPuntuales||Array(4).fill(null).map(puntualVacio)).map(x=>({...puntualVacio(),...x})),
         devoluciones: d.devoluciones||Array(3).fill(null).map(devVacia)
@@ -169,7 +169,7 @@ export default function Planilla() {
       datosAnteriores.current = JSON.parse(JSON.stringify(datos.current))
     } else {
       datos.current = {
-        entregas: Array(8).fill(null).map(entregaVacia),
+        entregas: [entregaVacia()],
         levantes: Array(9).fill(null).map(levanteVacio),
         clientesPuntuales: Array(4).fill(null).map(puntualVacio),
         devoluciones: Array(3).fill(null).map(devVacia)
@@ -496,15 +496,39 @@ export default function Planilla() {
       {/* ENTREGAS oficina */}
       {esOficina && (
         <div style={{ background:'white', borderRadius:'12px', padding:'20px', marginBottom:'20px', boxShadow:'0 1px 4px rgba(0,0,0,0.06)' }}>
-          <h3 style={{ margin:'0 0 16px', color:'#1a1a2e' }}>Entregas</h3>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'16px' }}>
+            <h3 style={{ margin:0, color:'#1a1a2e' }}>Entregas</h3>
+            <button onClick={() => {
+              datos.current.entregas = [...datos.current.entregas, entregaVacia()]
+              setSnapshot(JSON.parse(JSON.stringify(datos.current)))
+              programar(0)
+            }}
+              style={{ padding:'6px 14px', background:'#ebf8ff', color:'#3182ce', border:'1px solid #3182ce', borderRadius:'8px', fontSize:'13px', fontWeight:'700', cursor:'pointer' }}>
+              + Agregar entrega
+            </button>
+          </div>
           {entregas.map((e, i) => (
-            <div key={i} style={{ display:'grid', gridTemplateColumns:'1fr 1fr 100px 80px 110px 1fr', gap:'8px', marginBottom:'10px', alignItems:'end', background: snapshot.entregas[i]?.ok ? '#e6ffed' : 'transparent', borderRadius:'8px', padding:'4px', boxSizing:'border-box' }}>
+            <div key={i} style={{ display:'grid', gridTemplateColumns:'1fr 1fr 100px 80px 110px 1fr 32px', gap:'8px', marginBottom:'10px', alignItems:'end', background: snapshot.entregas[i]?.ok ? '#e6ffed' : 'transparent', borderRadius:'8px', padding:'4px', boxSizing:'border-box' }}>
               <div>{i===0&&<label style={LS}>Remitente</label>}<Campo seccion="entregas" i={i} campo="remitente" delay={5000} /></div>
               <div>{i===0&&<label style={LS}>Destinatario</label>}<Campo seccion="entregas" i={i} campo="destinatario" delay={5000} /></div>
               <div>{i===0&&<label style={LS}>A cobrar</label>}<Campo seccion="entregas" i={i} campo="aCobrar" delay={5000} /></div>
               <div>{i===0&&<label style={LS}>Bultos</label>}<Campo seccion="entregas" i={i} campo="bultos" type="number" delay={3000} /></div>
               <div>{i===0&&<label style={LS}>N° remito</label>}<Campo seccion="entregas" i={i} campo="remito" delay={5000} /></div>
               <div>{i===0&&<label style={LS}>Comentarios</label>}<Campo seccion="entregas" i={i} campo="comentarios" delay={5000} /></div>
+              <div style={{ display:'flex', alignItems:'flex-end', paddingBottom:'2px' }}>
+                {i===0&&<div style={{ height:'20px' }}/>}
+                {datos.current.entregas.length > 1 && (
+                  <button onClick={() => {
+                    datos.current.entregas = datos.current.entregas.filter((_, idx) => idx !== i)
+                    setSnapshot(JSON.parse(JSON.stringify(datos.current)))
+                    programar(0)
+                  }}
+                    title="Quitar fila"
+                    style={{ width:'28px', height:'28px', background:'none', border:'none', color:'#ccc', fontSize:'18px', cursor:'pointer', padding:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                    ✕
+                  </button>
+                )}
+              </div>
             </div>
           ))}
         </div>

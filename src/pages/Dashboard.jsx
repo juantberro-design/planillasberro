@@ -18,9 +18,9 @@ function levanteCompleto(l) {
   return !!(l.cliente && l.horaLlegada && l.horaSalida && l.bultos)
 }
 
-// Una entrega cuenta como "completa" si tiene remitente o destinatario Y el chofer la marcó OK
+// Una entrega cuenta como "completa" si tiene remitente o destinatario Y la oficina confirmó el remito firmado
 function entregaCompleta(e) {
-  return !!((e.remitente || e.destinatario) && e.ok)
+  return !!((e.remitente || e.destinatario) && e.remitoOk)
 }
 
 function calcularProgreso(data) {
@@ -48,8 +48,29 @@ function ProgresoLinea({ label, valor }) {
 export default function Dashboard() {
   const { usuario } = useAuth()
   const navigate = useNavigate()
-  const [fecha, setFecha] = useState(hoy())
-  const [turno, setTurno] = useState(turnoActual())
+
+  const [fecha, setFecha] = useState(() => {
+    return sessionStorage.getItem('dashboard_fecha') || hoy()
+  })
+  const [turno, setTurno] = useState(() => {
+    return sessionStorage.getItem('dashboard_turno') || turnoActual()
+  })
+
+  function cambiarFecha(nuevaFecha) {
+    sessionStorage.setItem('dashboard_fecha', nuevaFecha)
+    setFecha(nuevaFecha)
+  }
+
+  function cambiarTurno(nuevoTurno) {
+    sessionStorage.setItem('dashboard_turno', nuevoTurno)
+    setTurno(nuevoTurno)
+  }
+
+  function irAHoy() {
+    const fechaHoy = hoy()
+    sessionStorage.setItem('dashboard_fecha', fechaHoy)
+    setFecha(fechaHoy)
+  }
   const [choferes, setChoferes] = useState([])
   const [progresoPorChofer, setProgresoPorChofer] = useState({}) // { choferId: { levantes, puntuales, entregas } }
   const [cargando, setCargando] = useState(true)
@@ -161,12 +182,22 @@ export default function Dashboard() {
     <div style={{ padding: 'clamp(12px, 4vw, 24px)', maxWidth: '900px', margin: '0 auto' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
         <h2 style={{ margin: 0, color: '#1a1a2e' }}>Planillas del día</h2>
-        <input
-          type="date"
-          value={fecha}
-          onChange={e => setFecha(e.target.value)}
-          style={{ padding: '8px 12px', border: '1px solid #ddd', borderRadius: '8px', fontSize: '15px' }}
-        />
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <input
+            type="date"
+            value={fecha}
+            onChange={e => cambiarFecha(e.target.value)}
+            style={{ padding: '8px 12px', border: '1px solid #ddd', borderRadius: '8px', fontSize: '15px' }}
+          />
+          {fecha !== hoy() && (
+            <button
+              onClick={irAHoy}
+              style={{ padding: '8px 14px', background: '#1976d2', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap' }}
+            >
+              📅 Ir a hoy
+            </button>
+          )}
+        </div>
       </div>
 
       {/* SELECTOR DE TURNO + TOTALES — solo oficina */}
@@ -174,7 +205,7 @@ export default function Dashboard() {
         <div style={{ background: 'white', borderRadius: '12px', padding: '14px 18px', marginBottom: '20px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
           <div style={{ display: 'flex', gap: '6px' }}>
             {['mañana', 'tarde'].map(t => (
-              <button key={t} onClick={() => setTurno(t)}
+              <button key={t} onClick={() => cambiarTurno(t)}
                 style={{ padding: '9px 18px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: '600', fontSize: '14px', background: turno === t ? '#1a1a2e' : '#e2e8f0', color: turno === t ? 'white' : '#444' }}>
                 {t.charAt(0).toUpperCase() + t.slice(1)}
               </button>

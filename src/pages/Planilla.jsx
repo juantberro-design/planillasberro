@@ -87,7 +87,7 @@ function calcularDeltasPallets(anterior, nuevo) {
 function hoy() { return new Date().toISOString().split('T')[0] }
 // Antes de las 12:00 -> mañana, después -> tarde
 function turnoActual() { return new Date().getHours() < 12 ? 'mañana' : 'tarde' }
-const entregaVacia = () => ({ remitente:'', destinatario:'', aCobrar:'', bultos:'', remito:'', comentarios:'', ok:false })
+const entregaVacia = () => ({ remitente:'', destinatario:'', aCobrar:'', bultos:'', remito:'', comentarios:'', ok:false, remitoOk:false })
 const levanteVacio = () => ({ cliente:'', horaLlegada:'', horaSalida:'', bultos:'', palletDesarmar:'', comChofer:'', comOficina:'', controlOk:false })
 const puntualVacio = () => ({ cliente:'', horaLlegada:'', horaSalida:'', bultos:'', palletDesarmar:'', comChofer:'', comOficina:'', controlOk:false })
 const devVacia = () => ({ cliente:'', cantidad:'' })
@@ -119,6 +119,7 @@ export default function Planilla() {
   const [confirmarReinicio, setConfirmarReinicio] = useState(null)
   const [horaManualValor, setHoraManualValor] = useState('')
   const [okStates, setOkStates] = useState([false])
+  const [remitoOkStates, setRemitoOkStates] = useState([false])
   const [avisoPlantilla, setAvisoPlantilla] = useState('') // mensaje de éxito/error al cargar plantilla
   const [cargandoPlantilla, setCargandoPlantilla] = useState(false)
 
@@ -177,6 +178,7 @@ export default function Planilla() {
       datosAnteriores.current = null
     }
     setOkStates(datos.current.entregas.map(e => e.ok || false))
+    setRemitoOkStates(datos.current.entregas.map(e => e.remitoOk || false))
     setSnapshot(JSON.parse(JSON.stringify(datos.current)))
     setCargando(false)
     setTimeout(() => { listo.current = true }, 200)
@@ -508,13 +510,35 @@ export default function Planilla() {
             </button>
           </div>
           {entregas.map((e, i) => (
-            <div key={i} style={{ display:'grid', gridTemplateColumns:'1fr 1fr 100px 80px 110px 1fr 32px', gap:'8px', marginBottom:'10px', alignItems:'end', background: snapshot.entregas[i]?.ok ? '#e6ffed' : 'transparent', borderRadius:'8px', padding:'4px', boxSizing:'border-box' }}>
+            <div key={i} style={{ display:'grid', gridTemplateColumns:'1fr 1fr 100px 80px 110px 1fr 80px 32px', gap:'8px', marginBottom:'10px', alignItems:'end', background: snapshot.entregas[i]?.remitoOk ? '#e6ffed' : snapshot.entregas[i]?.ok ? '#fffde7' : 'transparent', borderRadius:'8px', padding:'4px', boxSizing:'border-box' }}>
               <div>{i===0&&<label style={LS}>Remitente</label>}<Campo seccion="entregas" i={i} campo="remitente" delay={5000} /></div>
               <div>{i===0&&<label style={LS}>Destinatario</label>}<Campo seccion="entregas" i={i} campo="destinatario" delay={5000} /></div>
               <div>{i===0&&<label style={LS}>A cobrar</label>}<Campo seccion="entregas" i={i} campo="aCobrar" delay={5000} /></div>
               <div>{i===0&&<label style={LS}>Bultos</label>}<Campo seccion="entregas" i={i} campo="bultos" type="number" delay={3000} /></div>
               <div>{i===0&&<label style={LS}>N° remito</label>}<Campo seccion="entregas" i={i} campo="remito" delay={5000} /></div>
               <div>{i===0&&<label style={LS}>Comentarios</label>}<Campo seccion="entregas" i={i} campo="comentarios" delay={5000} /></div>
+              <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:'4px' }}>
+                {i===0&&<label style={{...LS, textAlign:'center', whiteSpace:'nowrap'}}>Chofer / Remito</label>}
+                <div style={{ display:'flex', gap:'4px', alignItems:'center' }}>
+                  {/* Check amarillo del chofer (solo lectura para oficina) */}
+                  <div
+                    title="Chofer marcó OK"
+                    style={{ width:'32px', height:'32px', borderRadius:'50%', border:`2px solid ${snapshot.entregas[i]?.ok ? '#f59e0b' : '#ddd'}`, background: snapshot.entregas[i]?.ok ? '#fef3c7' : 'white', color: snapshot.entregas[i]?.ok ? '#f59e0b' : '#ccc', fontSize:'15px', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                    ✓
+                  </div>
+                  {/* Check verde de oficina — remito firmado recibido */}
+                  <button
+                    onClick={() => {
+                      const nuevoValor = !datos.current.entregas[i].remitoOk
+                      set('entregas', i, 'remitoOk', nuevoValor, 0)
+                      setRemitoOkStates(prev => { const n=[...prev]; n[i]=nuevoValor; return n })
+                    }}
+                    title="Remito firmado recibido"
+                    style={{ width:'32px', height:'32px', borderRadius:'50%', border:`2px solid ${snapshot.entregas[i]?.remitoOk ? '#38a169' : '#ddd'}`, background: snapshot.entregas[i]?.remitoOk ? '#38a169' : 'white', color: snapshot.entregas[i]?.remitoOk ? 'white' : '#aaa', cursor:'pointer', fontSize:'15px', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                    ✓
+                  </button>
+                </div>
+              </div>
               <div style={{ display:'flex', alignItems:'flex-end', paddingBottom:'2px' }}>
                 {i===0&&<div style={{ height:'20px' }}/>}
                 {datos.current.entregas.length > 1 && (
@@ -544,12 +568,12 @@ export default function Planilla() {
             {entregasChofer.map(e => {
               const i = e._i
               return (
-                <div key={i} style={{ background: okStates[i] ? '#e6ffed' : '#f8f9fa', border: `1px solid ${okStates[i] ? '#a3e8b8' : '#e2e8f0'}`, borderRadius:'10px', padding:'14px', marginBottom:'12px' }}>
+                <div key={i} style={{ background: okStates[i] ? '#fffde7' : '#f8f9fa', border: `1px solid ${okStates[i] ? '#fcd34d' : '#e2e8f0'}`, borderRadius:'10px', padding:'14px', marginBottom:'12px' }}>
                   <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'10px' }}>
                     <span style={{ fontWeight:'700', fontSize:'15px', color:'#1a1a2e' }}>{e.remitente} → {e.destinatario}</span>
                     <button disabled={soloLectura}
                       onClick={() => { set('entregas', i, 'ok', !datos.current.entregas[i].ok, 0); setOkStates(prev => { const n=[...prev]; n[i]=!n[i]; return n }) }}
-                      style={{ width:'36px', height:'36px', flexShrink:0, borderRadius:'50%', border:`2px solid ${okStates[i]?'#38a169':'#ddd'}`, background:okStates[i]?'#38a169':'white', color:okStates[i]?'white':'#aaa', cursor:soloLectura?'not-allowed':'pointer', fontSize:'16px', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                      style={{ width:'36px', height:'36px', flexShrink:0, borderRadius:'50%', border:`2px solid ${okStates[i]?'#f59e0b':'#ddd'}`, background:okStates[i]?'#fef3c7':'white', color:okStates[i]?'#f59e0b':'#aaa', cursor:soloLectura?'not-allowed':'pointer', fontSize:'16px', display:'flex', alignItems:'center', justifyContent:'center' }}>
                       ✓
                     </button>
                   </div>
@@ -573,7 +597,7 @@ export default function Planilla() {
             {entregasChofer.map(e => {
               const i = e._i
               return (
-                <div key={i} style={{ display:'grid', gridTemplateColumns:'1fr 1fr 100px 80px 110px 1fr 60px', gap:'8px', marginBottom:'8px', alignItems:'center', background: okStates[i] ? '#e6ffed' : 'transparent', borderRadius:'8px', padding:'4px', boxSizing:'border-box' }}>
+                <div key={i} style={{ display:'grid', gridTemplateColumns:'1fr 1fr 100px 80px 110px 1fr 60px', gap:'8px', marginBottom:'8px', alignItems:'center', background: okStates[i] ? '#fffde7' : 'transparent', borderRadius:'8px', padding:'4px', boxSizing:'border-box' }}>
                   <div style={{...ISD, display:'flex', alignItems:'center'}}>{e.remitente}</div>
                   <div style={{...ISD, display:'flex', alignItems:'center'}}>{e.destinatario}</div>
                   <div style={{...ISD, display:'flex', alignItems:'center'}}>{e.aCobrar}</div>
@@ -583,7 +607,7 @@ export default function Planilla() {
                   <div style={{ display:'flex', justifyContent:'center' }}>
                     <button disabled={soloLectura}
                       onClick={() => { set('entregas', i, 'ok', !datos.current.entregas[i].ok, 0); setOkStates(prev => { const n=[...prev]; n[i]=!n[i]; return n }) }}
-                      style={{ width:'36px', height:'36px', borderRadius:'50%', border:`2px solid ${okStates[i]?'#38a169':'#ddd'}`, background:okStates[i]?'#38a169':'white', color:okStates[i]?'white':'#aaa', cursor:soloLectura?'not-allowed':'pointer', fontSize:'16px', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                      style={{ width:'36px', height:'36px', borderRadius:'50%', border:`2px solid ${okStates[i]?'#f59e0b':'#ddd'}`, background:okStates[i]?'#fef3c7':'white', color:okStates[i]?'#f59e0b':'#aaa', cursor:soloLectura?'not-allowed':'pointer', fontSize:'16px', display:'flex', alignItems:'center', justifyContent:'center' }}>
                       ✓
                     </button>
                   </div>

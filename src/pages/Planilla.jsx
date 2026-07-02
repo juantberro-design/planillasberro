@@ -162,7 +162,7 @@ export default function Planilla() {
     if (snap.exists()) {
       const d = snap.data()
       datos.current = {
-        entregas: (d.entregas||[entregaVacia()]).map(x=>({...entregaVacia(),...x})),
+        entregas: (() => { const todas = (d.entregas||[entregaVacia()]).map(x=>({...entregaVacia(),...x})); const conDatos = todas.filter(e => e.remitente || e.destinatario || e.aCobrar || e.bultos || e.remito || e.comentarios); return conDatos.length > 0 ? conDatos : [entregaVacia()] })(),
         levantes: (d.levantes||Array(9).fill(null).map(levanteVacio)).map(x=>({...levanteVacio(),...x})),
         clientesPuntuales: (d.clientesPuntuales||Array(4).fill(null).map(puntualVacio)).map(x=>({...puntualVacio(),...x})),
         devoluciones: d.devoluciones||Array(3).fill(null).map(devVacia)

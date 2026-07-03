@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { doc, getDoc, setDoc, addDoc, serverTimestamp, collection, getDocs, increment } from 'firebase/firestore'
+import { doc, getDoc, setDoc, addDoc, serverTimestamp, collection, getDocs, increment, onSnapshot } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useAuth } from '../hooks/useAuth.jsx'
 import SelectorCliente from '../components/SelectorCliente.jsx'
@@ -122,6 +122,10 @@ export default function Planilla() {
   const [remitoOkStates, setRemitoOkStates] = useState([false])
   const [avisoPlantilla, setAvisoPlantilla] = useState('') // mensaje de éxito/error al cargar plantilla
   const [cargandoPlantilla, setCargandoPlantilla] = useState(false)
+  // Se incrementa cada vez que se aplican datos remotos (nunca mientras hay una
+  // edición local pendiente). Forma parte de la key de los inputs no controlados
+  // para que se actualicen visualmente cuando llega un cambio de otro dispositivo.
+  const [refreshKey, setRefreshKey] = useState(0)
 
   // Datos viven completamente fuera de React en refs
   const datos = useRef({
@@ -140,10 +144,40 @@ export default function Planilla() {
   const [snapshot, setSnapshot] = useState(null)
 
   useEffect(() => { cargarChoferYClientes() }, [choferId])
+
+  // Escucha en tiempo real el documento de este chofer/fecha/turno.
+  // Antes se leía una sola vez con getDoc, así que si el chofer marcaba una
+  // hora desde el celular, quien tenía la planilla abierta en la compu no lo
+  // veía hasta recargar la página.
+  //
+  // Resguardos para no pisar una edición en curso:
+  // - Se ignoran los snapshots con hasPendingWrites=true (son el eco de
+  //   nuestro propio guardado, todavía no confirmado por el servidor).
+  // - Se ignoran los snapshots mientras hay un guardado con debounce pendiente
+  //   (timerRef.current), para no pisar lo que se está por guardar.
   useEffect(() => {
     listo.current = false
-    if (timerRef.current) clearTimeout(timerRef.current)
-    cargarDatos()
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null }
+    setCargando(true)
+    const ref = doc(db, 'planillas', fecha, 'choferes', `${choferId}_${turno}`)
+    let primerSnapshot = true
+
+    const unsub = onSnapshot(ref, snap => {
+      if (snap.metadata.hasPendingWrites) return
+      if (!primerSnapshot && timerRef.current) return
+
+      aplicarDatos(snap)
+
+      if (primerSnapshot) {
+        primerSnapshot = false
+        setCargando(false)
+        setTimeout(() => { listo.current = true }, 200)
+      }
+    }, () => {
+      setCargando(false)
+    })
+
+    return () => unsub()
   }, [fecha, choferId, turno])
 
   async function cargarChoferYClientes() {
@@ -155,10 +189,7 @@ export default function Planilla() {
     setTodosClientes(sk.docs.map(d => d.data().nombre).sort())
   }
 
-  async function cargarDatos() {
-    setCargando(true)
-    const ref = doc(db, 'planillas', fecha, 'choferes', `${choferId}_${turno}`)
-    const snap = await getDoc(ref)
+  function aplicarDatos(snap) {
     if (snap.exists()) {
       const d = snap.data()
       datos.current = {
@@ -180,8 +211,9 @@ export default function Planilla() {
     setOkStates(datos.current.entregas.map(e => e.ok || false))
     setRemitoOkStates(datos.current.entregas.map(e => e.remitoOk || false))
     setSnapshot(JSON.parse(JSON.stringify(datos.current)))
-    setCargando(false)
-    setTimeout(() => { listo.current = true }, 200)
+    // Solo llegamos acá cuando no hay edición local pendiente, así que es
+    // seguro remontar los inputs no controlados para que muestren el dato fresco.
+    setRefreshKey(k => k + 1)
   }
 
   const guardar = useCallback(async () => {
@@ -224,8 +256,12 @@ export default function Planilla() {
   function programar(delay) {
     if (!listo.current || soloLectura) return
     if (timerRef.current) clearTimeout(timerRef.current)
-    if (delay === 0) guardar()
-    else timerRef.current = setTimeout(guardar, delay)
+    if (delay === 0) {
+      timerRef.current = null
+      guardar()
+    } else {
+      timerRef.current = setTimeout(() => { timerRef.current = null; guardar() }, delay)
+    }
   }
 
   function set(seccion, i, campo, valor, delay=3000) {
@@ -319,7 +355,7 @@ export default function Planilla() {
     const initialValue = datos.current[seccion][i][campo]
     return (
       <input
-        key={`${fecha}-${choferId}-${turno}-${seccion}-${i}-${campo}`}
+        key={`${fecha}-${choferId}-${turno}-${seccion}-${i}-${campo}-${refreshKey}`}
         defaultValue={initialValue}
         disabled={disabled}
         type={type}

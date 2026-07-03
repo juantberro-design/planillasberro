@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { collection, getDocs } from 'firebase/firestore'
+import { collection, getDocs, onSnapshot } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useAuth } from '../hooks/useAuth.jsx'
 
@@ -97,28 +97,34 @@ export default function Dashboard() {
     cargarChoferes()
   }, [])
 
+  // Escucha en tiempo real la carpeta de choferes del día/turno seleccionado.
+  // Antes esto se leía una sola vez con getDocs, así que si un chofer marcaba
+  // algo en el celular, la oficina no lo veía hasta recargar la página a mano.
+  // Con onSnapshot, Firestore empuja los cambios apenas se guardan.
   useEffect(() => {
-    if (esOficina && choferes.length > 0) cargarProgreso()
-  }, [fecha, turno, choferes, esOficina])
-
-  async function cargarProgreso() {
+    if (!esOficina || choferes.length === 0) return
     setCargandoProgreso(true)
-    try {
-      const snap = await getDocs(collection(db, 'planillas', fecha, 'choferes'))
-      const mapa = {}
-      snap.forEach(docSnap => {
-        const parts = docSnap.id.split('_')
-        const choferId = parts[0]
-        const turnoDoc = parts[1]
-        if (turnoDoc !== turno) return
-        mapa[choferId] = calcularProgreso(docSnap.data())
-      })
-      setProgresoPorChofer(mapa)
-    } catch {
-      setProgresoPorChofer({})
-    }
-    setCargandoProgreso(false)
-  }
+    const unsub = onSnapshot(
+      collection(db, 'planillas', fecha, 'choferes'),
+      snap => {
+        const mapa = {}
+        snap.forEach(docSnap => {
+          const parts = docSnap.id.split('_')
+          const choferId = parts[0]
+          const turnoDoc = parts[1]
+          if (turnoDoc !== turno) return
+          mapa[choferId] = calcularProgreso(docSnap.data())
+        })
+        setProgresoPorChofer(mapa)
+        setCargandoProgreso(false)
+      },
+      () => {
+        setProgresoPorChofer({})
+        setCargandoProgreso(false)
+      }
+    )
+    return () => unsub()
+  }, [fecha, turno, choferes, esOficina])
 
   const choferesFiltrados = esChofer
     ? choferes.filter(c => c.id === usuario.choferId)

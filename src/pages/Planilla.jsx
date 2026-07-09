@@ -166,7 +166,7 @@ export default function Planilla() {
       if (snap.metadata.hasPendingWrites) return
       if (!primerSnapshot && timerRef.current) return
 
-      aplicarDatos(snap)
+      aplicarDatos(snap, primerSnapshot)
 
       if (primerSnapshot) {
         primerSnapshot = false
@@ -189,11 +189,21 @@ export default function Planilla() {
     setTodosClientes(sk.docs.map(d => d.data().nombre).sort())
   }
 
-  function aplicarDatos(snap) {
+  function aplicarDatos(snap, esCargaInicial) {
     if (snap.exists()) {
       const d = snap.data()
       datos.current = {
-        entregas: (() => { const todas = (d.entregas||[entregaVacia()]).map(x=>({...entregaVacia(),...x})); const conDatos = todas.filter(e => e.remitente || e.destinatario || e.aCobrar || e.bultos || e.remito || e.comentarios); return conDatos.length > 0 ? conDatos : [entregaVacia()] })(),
+        entregas: (() => {
+          const todas = (d.entregas||[entregaVacia()]).map(x=>({...entregaVacia(),...x}))
+          // El filtro de filas vacías solo se aplica en la carga inicial
+          // (para limpiar filas viejas guardadas de días anteriores).
+          // En las actualizaciones en tiempo real posteriores NO se filtra,
+          // porque si no, una fila recién agregada (todavía vacía) se borra
+          // sola apenas se confirma el guardado en Firestore.
+          if (!esCargaInicial) return todas.length > 0 ? todas : [entregaVacia()]
+          const conDatos = todas.filter(e => e.remitente || e.destinatario || e.aCobrar || e.bultos || e.remito || e.comentarios)
+          return conDatos.length > 0 ? conDatos : [entregaVacia()]
+        })(),
         levantes: (d.levantes||Array(9).fill(null).map(levanteVacio)).map(x=>({...levanteVacio(),...x})),
         clientesPuntuales: (d.clientesPuntuales||Array(4).fill(null).map(puntualVacio)).map(x=>({...puntualVacio(),...x})),
         devoluciones: d.devoluciones||Array(3).fill(null).map(devVacia)

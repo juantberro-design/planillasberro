@@ -137,6 +137,8 @@ export default function Planilla() {
   const datosAnteriores = useRef(null)
   const timerRef = useRef(null)
   const listo = useRef(false)
+  const guardandoRef = useRef(false)      // true mientras hay un guardado corriendo
+  const guardarPendiente = useRef(false)  // true si llegó otro pedido de guardar mientras tanto
   const usuarioRef = useRef(usuario)
   useEffect(() => { usuarioRef.current = usuario }, [usuario])
 
@@ -228,36 +230,59 @@ export default function Planilla() {
 
   const guardar = useCallback(async () => {
     if (!listo.current || soloLectura) return
-    setGuardando(true)
-    const ref = doc(db, 'planillas', fecha, 'choferes', `${choferId}_${turno}`)
-    const nuevo = JSON.parse(JSON.stringify(datos.current))
-    const diff = calcularDiff(datosAnteriores.current, nuevo)
 
-    // Calculamos qué cambió en términos de pallets, para actualizar el saldo acumulado por cliente
-    const deltas = calcularDeltasPallets(datosAnteriores.current, nuevo)
-    const promesasSaldo = Object.entries(deltas)
-      .filter(([, d]) => d.rec !== 0 || d.dev !== 0)
-      .map(([cliente, d]) => {
-        const idCliente = cliente.toLowerCase().replace(/\s+/g, '-')
-        return setDoc(doc(db, 'saldosPallets', idCliente), {
-          cliente,
-          rec: increment(d.rec),
-          dev: increment(d.dev)
-        }, { merge: true })
-      })
-
-    await Promise.all([
-      setDoc(ref, { ...nuevo, modificadoPor: usuarioRef.current.uid, modificadoNombre: usuarioRef.current.nombre, modificadoAt: serverTimestamp() }, { merge: true }),
-      ...promesasSaldo
-    ])
-
-    if (diff.length > 0 || !datosAnteriores.current) {
-      await addDoc(collection(db, 'planillas', fecha, 'choferes', `${choferId}_${turno}`, 'historial'), {
-        modificadoPor: usuarioRef.current.uid, modificadoNombre: usuarioRef.current.nombre,
-        modificadoAt: new Date().toISOString(), fecha, choferId, turno, cambios: diff, snapshot: nuevo
-      })
-      datosAnteriores.current = nuevo
+    // Si ya hay un guardado en curso, no arrancamos otro en paralelo:
+    // avisamos que hay uno pendiente y el guardado en curso se va a
+    // encargar de volver a guardar (con los datos más frescos) al terminar.
+    // Esto evita que, con internet fallando, un guardado viejo llegue
+    // atrasado a Firestore y pise (borre) un cambio más nuevo, como una
+    // fila recién agregada.
+    if (guardandoRef.current) {
+      guardarPendiente.current = true
+      return
     }
+
+    guardandoRef.current = true
+    setGuardando(true)
+
+    do {
+      guardarPendiente.current = false
+
+      const ref = doc(db, 'planillas', fecha, 'choferes', `${choferId}_${turno}`)
+      const nuevo = JSON.parse(JSON.stringify(datos.current))
+      const diff = calcularDiff(datosAnteriores.current, nuevo)
+
+      // Calculamos qué cambió en términos de pallets, para actualizar el saldo acumulado por cliente
+      const deltas = calcularDeltasPallets(datosAnteriores.current, nuevo)
+      const promesasSaldo = Object.entries(deltas)
+        .filter(([, d]) => d.rec !== 0 || d.dev !== 0)
+        .map(([cliente, d]) => {
+          const idCliente = cliente.toLowerCase().replace(/\s+/g, '-')
+          return setDoc(doc(db, 'saldosPallets', idCliente), {
+            cliente,
+            rec: increment(d.rec),
+            dev: increment(d.dev)
+          }, { merge: true })
+        })
+
+      await Promise.all([
+        setDoc(ref, { ...nuevo, modificadoPor: usuarioRef.current.uid, modificadoNombre: usuarioRef.current.nombre, modificadoAt: serverTimestamp() }, { merge: true }),
+        ...promesasSaldo
+      ])
+
+      if (diff.length > 0 || !datosAnteriores.current) {
+        await addDoc(collection(db, 'planillas', fecha, 'choferes', `${choferId}_${turno}`, 'historial'), {
+          modificadoPor: usuarioRef.current.uid, modificadoNombre: usuarioRef.current.nombre,
+          modificadoAt: new Date().toISOString(), fecha, choferId, turno, cambios: diff, snapshot: nuevo
+        })
+        datosAnteriores.current = nuevo
+      }
+      // Si mientras guardábamos llegó otro pedido de guardar (guardarPendiente),
+      // repetimos el guardado tomando los datos más actuales — así nunca se
+      // pierde una fila o un cambio por culpa de un guardado atrasado.
+    } while (guardarPendiente.current)
+
+    guardandoRef.current = false
     setGuardando(false)
     setGuardado(true)
     setTimeout(() => setGuardado(false), 2000)

@@ -157,6 +157,12 @@ export default function Planilla() {
   //   nuestro propio guardado, todavía no confirmado por el servidor).
   // - Se ignoran los snapshots mientras hay un guardado con debounce pendiente
   //   (timerRef.current), para no pisar lo que se está por guardar.
+  // - Se ignoran también mientras hay un guardado EN VUELO (guardandoRef),
+  //   es decir, ya se mandó a Firestore pero todavía no llegó la confirmación.
+  //   Esto es clave con internet lento/entrecortado: sin este resguardo, una
+  //   actualización que llega mientras nuestro guardado todavía viaja puede
+  //   pisar en pantalla lo que acabamos de agregar (ej: una fila nueva),
+  //   aunque el guardado en sí no se haya perdido.
   useEffect(() => {
     listo.current = false
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null }
@@ -166,7 +172,7 @@ export default function Planilla() {
 
     const unsub = onSnapshot(ref, snap => {
       if (snap.metadata.hasPendingWrites) return
-      if (!primerSnapshot && timerRef.current) return
+      if (!primerSnapshot && (timerRef.current || guardandoRef.current)) return
 
       aplicarDatos(snap, primerSnapshot)
 

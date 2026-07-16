@@ -87,7 +87,9 @@ function calcularDeltasPallets(anterior, nuevo) {
 function hoy() { return new Date().toISOString().split('T')[0] }
 // Antes de las 12:00 -> mañana, después -> tarde
 function turnoActual() { return new Date().getHours() < 12 ? 'mañana' : 'tarde' }
-const entregaVacia = () => ({ remitente:'', destinatario:'', aCobrar:'', bultos:'', remito:'', comentarios:'', ok:false, remitoOk:false })
+let contadorId = 0
+const crearIdEntrega = () => `e${Date.now()}-${(contadorId++).toString(36)}`
+const entregaVacia = () => ({ id: crearIdEntrega(), remitente:'', destinatario:'', aCobrar:'', bultos:'', remito:'', comentarios:'', ok:false, remitoOk:false })
 const levanteVacio = () => ({ cliente:'', horaLlegada:'', horaSalida:'', bultos:'', palletDesarmar:'', comChofer:'', comOficina:'', controlOk:false })
 const puntualVacio = () => ({ cliente:'', horaLlegada:'', horaSalida:'', bultos:'', palletDesarmar:'', comChofer:'', comOficina:'', controlOk:false })
 const devVacia = () => ({ cliente:'', cantidad:'' })
@@ -139,6 +141,12 @@ export default function Planilla() {
   const listo = useRef(false)
   const guardandoRef = useRef(false)      // true mientras hay un guardado corriendo
   const guardarPendiente = useRef(false)  // true si llegó otro pedido de guardar mientras tanto
+  // Ids de filas de "entregas" agregadas en este dispositivo que todavía no
+  // se vieron confirmadas en un snapshot de Firestore. Mientras un id esté
+  // acá, aplicarDatos() la va a mantener en pantalla aunque el snapshot que
+  // llegue todavía no la tenga (por ejemplo, por internet lento). Solo sale
+  // de esta lista cuando Firestore la confirma, o cuando se borra a mano.
+  const filasSinConfirmar = useRef(new Set())
   const usuarioRef = useRef(usuario)
   useEffect(() => { usuarioRef.current = usuario }, [usuario])
 
@@ -202,15 +210,37 @@ export default function Planilla() {
       const d = snap.data()
       datos.current = {
         entregas: (() => {
-          const todas = (d.entregas||[entregaVacia()]).map(x=>({...entregaVacia(),...x}))
+          // A cada fila que llega de Firestore le aseguramos un id estable.
+          // Las filas guardadas antes de este cambio no tienen id propio,
+          // así que les asignamos uno basado en su posición (se mantiene
+          // igual mientras no cambie el orden).
+          const entrantes = (d.entregas||[entregaVacia()]).map((x, idx) => ({
+            ...entregaVacia(), ...x, id: x.id || `legacy-${idx}`
+          }))
+
           // El filtro de filas vacías solo se aplica en la carga inicial
           // (para limpiar filas viejas guardadas de días anteriores).
           // En las actualizaciones en tiempo real posteriores NO se filtra,
           // porque si no, una fila recién agregada (todavía vacía) se borra
           // sola apenas se confirma el guardado en Firestore.
-          if (!esCargaInicial) return todas.length > 0 ? todas : [entregaVacia()]
-          const conDatos = todas.filter(e => e.remitente || e.destinatario || e.aCobrar || e.bultos || e.remito || e.comentarios)
-          return conDatos.length > 0 ? conDatos : [entregaVacia()]
+          let base
+          if (!esCargaInicial) {
+            base = entrantes.length > 0 ? entrantes : [entregaVacia()]
+          } else {
+            const conDatos = entrantes.filter(e => e.remitente || e.destinatario || e.aCobrar || e.bultos || e.remito || e.comentarios)
+            base = conDatos.length > 0 ? conDatos : [entregaVacia()]
+          }
+
+          // Filas agregadas en este dispositivo que todavía no llegaron
+          // confirmadas en este snapshot: las mantenemos igual, al final.
+          // Solo desaparecen cuando Firestore las confirma (match por id)
+          // o cuando se borran a mano (ahí se sacan de filasSinConfirmar).
+          const idsEntrantes = new Set(base.map(e => e.id))
+          const pendientes = (datos.current.entregas || [])
+            .filter(e => filasSinConfirmar.current.has(e.id) && !idsEntrantes.has(e.id))
+          idsEntrantes.forEach(id => filasSinConfirmar.current.delete(id))
+
+          return [...base, ...pendientes]
         })(),
         levantes: (d.levantes||Array(9).fill(null).map(levanteVacio)).map(x=>({...levanteVacio(),...x})),
         clientesPuntuales: (d.clientesPuntuales||Array(4).fill(null).map(puntualVacio)).map(x=>({...puntualVacio(),...x})),
@@ -578,7 +608,9 @@ export default function Planilla() {
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'16px' }}>
             <h3 style={{ margin:0, color:'#1a1a2e' }}>Entregas</h3>
             <button onClick={() => {
-              datos.current.entregas = [...datos.current.entregas, entregaVacia()]
+              const nueva = entregaVacia()
+              filasSinConfirmar.current.add(nueva.id)
+              datos.current.entregas = [...datos.current.entregas, nueva]
               setSnapshot(JSON.parse(JSON.stringify(datos.current)))
               programar(0)
             }}
@@ -620,6 +652,7 @@ export default function Planilla() {
                 {i===0&&<div style={{ height:'20px' }}/>}
                 {datos.current.entregas.length > 1 && (
                   <button onClick={() => {
+                    filasSinConfirmar.current.delete(datos.current.entregas[i].id)
                     datos.current.entregas = datos.current.entregas.filter((_, idx) => idx !== i)
                     setSnapshot(JSON.parse(JSON.stringify(datos.current)))
                     programar(0)

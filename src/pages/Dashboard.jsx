@@ -35,14 +35,23 @@ function calcularProgreso(data) {
   }
 }
 
-function ProgresoLinea({ label, valor }) {
+function ProgresoLinea({ label, valor, blanco }) {
   if (valor.total === 0) return null
   const completo = valor.hechos === valor.total
+  const color = blanco ? 'white' : (completo ? '#38a169' : '#444')
   return (
-    <div style={{ fontSize: '11px', fontWeight: '700', color: completo ? '#38a169' : '#444', whiteSpace: 'nowrap' }}>
+    <div style={{ fontSize: '11px', fontWeight: '700', color, whiteSpace: 'nowrap' }}>
       {label} {valor.hechos}/{valor.total}
     </div>
   )
+}
+
+// La tarjeta del chofer se pinta de verde cuando tiene al menos algo asignado
+// y TODO lo que tiene (levantes, entregas y puntuales) está completo
+function choferCompleto(progreso) {
+  if (!progreso) return false
+  const partes = [progreso.levantes, progreso.entregas, progreso.puntuales].filter(p => p.total > 0)
+  return partes.length > 0 && partes.every(p => p.hechos === p.total)
 }
 
 export default function Dashboard() {
@@ -317,24 +326,25 @@ export default function Dashboard() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: '12px' }}>
           {choferesFiltrados.map(chofer => {
             const progreso = progresoPorChofer[chofer.id]
+            const completo = esOficina && choferCompleto(progreso)
             return (
               <div
                 key={chofer.id}
                 onClick={() => navigate(`/planilla/${fecha}/${chofer.id}${esOficina ? `?turno=${turno}` : ''}`)}
-                style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', position: 'relative' }}
+                style={{ background: completo ? '#22A04B' : 'white', border: completo ? '1px solid #1C8A40' : '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', position: 'relative' }}
                 onMouseOver={e => e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.12)'}
                 onMouseOut={e => e.currentTarget.style.boxShadow = '0 1px 4px rgba(0,0,0,0.06)'}
               >
                 {esOficina && progreso && (
                   <div style={{ position: 'absolute', top: '10px', right: '10px', textAlign: 'right' }}>
-                    <ProgresoLinea label="Levantes" valor={progreso.levantes} />
-                    <ProgresoLinea label="Entregas" valor={progreso.entregas} />
-                    <ProgresoLinea label="Puntuales" valor={progreso.puntuales} />
+                    <ProgresoLinea label="Levantes" valor={progreso.levantes} blanco={completo} />
+                    <ProgresoLinea label="Entregas" valor={progreso.entregas} blanco={completo} />
+                    <ProgresoLinea label="Puntuales" valor={progreso.puntuales} blanco={completo} />
                   </div>
                 )}
                 <div style={{ fontSize: '28px', marginBottom: '8px' }}>🚚</div>
-                <div style={{ fontWeight: '600', color: '#1a1a2e' }}>{chofer.nombre}</div>
-                <div style={{ fontSize: '13px', color: '#888', marginTop: '4px' }}>{fecha}{esOficina ? ` · ${turno}` : ''}</div>
+                <div style={{ fontWeight: '600', color: completo ? 'white' : '#1a1a2e' }}>{chofer.nombre}</div>
+                <div style={{ fontSize: '13px', color: completo ? '#E3F5E8' : '#888', marginTop: '4px' }}>{fecha}{esOficina ? ` · ${turno}` : ''}</div>
               </div>
             )
           })}

@@ -90,8 +90,8 @@ function turnoActual() { return new Date().getHours() < 12 ? 'mañana' : 'tarde'
 let contadorId = 0
 const crearIdEntrega = () => `e${Date.now()}-${(contadorId++).toString(36)}`
 const entregaVacia = () => ({ id: crearIdEntrega(), remitente:'', destinatario:'', aCobrar:'', bultos:'', remito:'', comentarios:'', ok:false, remitoOk:false })
-const levanteVacio = () => ({ cliente:'', horaLlegada:'', horaSalida:'', bultos:'', palletDesarmar:'', comChofer:'', comOficina:'', controlOk:false })
-const puntualVacio = () => ({ cliente:'', horaLlegada:'', horaSalida:'', bultos:'', palletDesarmar:'', comChofer:'', comOficina:'', controlOk:false })
+const levanteVacio = () => ({ cliente:'', bultos:'', palletDesarmar:'', comChofer:'', comOficina:'', controlOk:false })
+const puntualVacio = () => ({ cliente:'', bultos:'', palletDesarmar:'', comChofer:'', comOficina:'', controlOk:false })
 const devVacia = () => ({ cliente:'', cantidad:'' })
 
 const IS = { width:'100%', padding:'10px', border:'1px solid #ddd', borderRadius:'6px', fontSize:'16px', boxSizing:'border-box' }
@@ -118,8 +118,6 @@ export default function Planilla() {
   const [cargando, setCargando] = useState(true)
   const [guardando, setGuardando] = useState(false)
   const [guardado, setGuardado] = useState(false)
-  const [confirmarReinicio, setConfirmarReinicio] = useState(null)
-  const [horaManualValor, setHoraManualValor] = useState('')
   const [okStates, setOkStates] = useState([false])
   const [remitoOkStates, setRemitoOkStates] = useState([false])
   const [avisoPlantilla, setAvisoPlantilla] = useState('') // mensaje de éxito/error al cargar plantilla
@@ -379,41 +377,6 @@ export default function Planilla() {
     setCargandoPlantilla(false)
   }
 
-  function horaActual() {
-    return new Date().toLocaleTimeString('es-UY', { hour:'2-digit', minute:'2-digit' })
-  }
-
-  function marcarHora(seccion, i, campo) {
-    const yaTiene = datos.current[seccion][i][campo]
-    if (yaTiene) {
-      setHoraManualValor(yaTiene && yaTiene.includes(':') ? yaTiene : '')
-      setConfirmarReinicio({ seccion, i, campo })
-      return
-    }
-    const hora = horaActual()
-    datos.current[seccion][i][campo] = hora
-    setSnapshot(JSON.parse(JSON.stringify(datos.current)))
-    programar(0)
-  }
-
-  function confirmarReinicioHora() {
-    const { seccion, i, campo } = confirmarReinicio
-    const hora = horaActual()
-    datos.current[seccion][i][campo] = hora
-    setSnapshot(JSON.parse(JSON.stringify(datos.current)))
-    setConfirmarReinicio(null)
-    programar(0)
-  }
-
-  function confirmarHoraManual(horaElegida) {
-    if (!horaElegida) return
-    const { seccion, i, campo } = confirmarReinicio
-    datos.current[seccion][i][campo] = horaElegida
-    setSnapshot(JSON.parse(JSON.stringify(datos.current)))
-    setConfirmarReinicio(null)
-    programar(0)
-  }
-
   if (cargando || !snapshot) return <div style={{ padding:'40px', textAlign:'center' }}>Cargando...</div>
 
   const { entregas, levantes, clientesPuntuales, devoluciones } = snapshot
@@ -443,7 +406,7 @@ export default function Planilla() {
   function FilaLevante({ l, i, seccion, clienteEditable, oficina }) {
     const controlOk = snapshot[seccion][i]?.controlOk || false
     return (
-      <div style={{ display:'grid', gridTemplateColumns:'1.3fr 90px 90px 70px 90px 1fr 1fr 44px', gap:'6px', marginBottom:'8px', alignItems:'end', background: controlOk ? '#e6ffed' : 'transparent', borderRadius:'8px', padding:'4px', boxSizing:'border-box' }}>
+      <div style={{ display:'grid', gridTemplateColumns:'1.3fr 70px 90px 1fr 1fr 44px', gap:'6px', marginBottom:'8px', alignItems:'end', background: controlOk ? '#e6ffed' : 'transparent', borderRadius:'8px', padding:'4px', boxSizing:'border-box' }}>
         <div>
           {clienteEditable ? (
             <SelectorCliente
@@ -455,26 +418,6 @@ export default function Planilla() {
             />
           ) : (
             <div style={{...ISD, display:'flex', alignItems:'center'}}>{l.cliente}</div>
-          )}
-        </div>
-        <div>
-          {esChofer && !soloLectura ? (
-            <button onClick={() => marcarHora(seccion, i, 'horaLlegada')}
-              style={{...IS, background: l.horaLlegada?'#e6ffed':'#f7f7f7', cursor:'pointer', textAlign:'center', padding:'7px 4px', fontSize:'13px'}}>
-              {l.horaLlegada || '⏱'}
-            </button>
-          ) : (
-            <Campo seccion={seccion} i={i} campo="horaLlegada" type="time" delay={0} disabled={soloLectura} />
-          )}
-        </div>
-        <div>
-          {esChofer && !soloLectura ? (
-            <button onClick={() => marcarHora(seccion, i, 'horaSalida')}
-              style={{...IS, background: l.horaSalida?'#e6ffed':'#f7f7f7', cursor:'pointer', textAlign:'center', padding:'7px 4px', fontSize:'13px'}}>
-              {l.horaSalida || '⏱'}
-            </button>
-          ) : (
-            <Campo seccion={seccion} i={i} campo="horaSalida" type="time" delay={0} disabled={soloLectura} />
           )}
         </div>
         <div><Campo seccion={seccion} i={i} campo="bultos" type="number" delay={3000} disabled={soloLectura} /></div>
@@ -501,8 +444,8 @@ export default function Planilla() {
 
   function HeaderLevante() {
     return (
-      <div style={{ display:'grid', gridTemplateColumns:'1.3fr 90px 90px 70px 90px 1fr 1fr 44px', gap:'6px', marginBottom:'4px' }}>
-        {['Cliente','Llegada','Salida','Bultos','Pallets a desarmar','Com. chofer','Com. oficina','✓'].map(h => <label key={h} style={LS}>{h}</label>)}
+      <div style={{ display:'grid', gridTemplateColumns:'1.3fr 70px 90px 1fr 1fr 44px', gap:'6px', marginBottom:'4px' }}>
+        {['Cliente','Bultos','Pallets a desarmar','Com. chofer','Com. oficina','✓'].map(h => <label key={h} style={LS}>{h}</label>)}
       </div>
     )
   }
@@ -522,31 +465,6 @@ export default function Planilla() {
               ✓ Controlado
             </span>
           )}
-        </div>
-
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px', marginBottom:'10px' }}>
-          <div>
-            <label style={LS}>Llegada</label>
-            {!soloLectura ? (
-              <button onClick={() => marcarHora(seccion, i, 'horaLlegada')}
-                style={{...IS, background: l.horaLlegada?'#e6ffed':'white', cursor:'pointer', textAlign:'center', fontWeight:'600', padding:'12px'}}>
-                {l.horaLlegada || '⏱ Marcar'}
-              </button>
-            ) : (
-              <div style={{...ISD, padding:'12px', textAlign:'center'}}>{l.horaLlegada || '-'}</div>
-            )}
-          </div>
-          <div>
-            <label style={LS}>Salida</label>
-            {!soloLectura ? (
-              <button onClick={() => marcarHora(seccion, i, 'horaSalida')}
-                style={{...IS, background: l.horaSalida?'#e6ffed':'white', cursor:'pointer', textAlign:'center', fontWeight:'600', padding:'12px'}}>
-                {l.horaSalida || '⏱ Marcar'}
-              </button>
-            ) : (
-              <div style={{...ISD, padding:'12px', textAlign:'center'}}>{l.horaSalida || '-'}</div>
-            )}
-          </div>
         </div>
 
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px', marginBottom:'10px' }}>
@@ -766,14 +684,12 @@ export default function Planilla() {
       {esOficina && (
         <div style={{ background:'white', borderRadius:'12px', padding:'20px', marginBottom:'20px', boxShadow:'0 1px 4px rgba(0,0,0,0.06)', overflowX:'auto' }}>
           <h3 style={{ margin:'0 0 16px', color:'#1a1a2e' }}>Clientes puntuales</h3>
-          <div style={{ display:'grid', gridTemplateColumns:'1.3fr 90px 90px 70px 90px 1fr 1fr 44px', gap:'6px', marginBottom:'4px' }}>
-            {['Cliente','Llegada','Salida','Bultos','Pallets a desarmar','Com. chofer','Com. oficina','✓'].map(h=><label key={h} style={LS}>{h}</label>)}
+          <div style={{ display:'grid', gridTemplateColumns:'1.3fr 70px 90px 1fr 1fr 44px', gap:'6px', marginBottom:'4px' }}>
+            {['Cliente','Bultos','Pallets a desarmar','Com. chofer','Com. oficina','✓'].map(h=><label key={h} style={LS}>{h}</label>)}
           </div>
           {clientesPuntuales.map((l,i) => (
-            <div key={i} style={{ display:'grid', gridTemplateColumns:'1.3fr 90px 90px 70px 90px 1fr 1fr 44px', gap:'6px', marginBottom:'8px', alignItems:'end', background: snapshot.clientesPuntuales[i]?.controlOk ? '#e6ffed' : 'transparent', borderRadius:'8px', padding:'4px', boxSizing:'border-box' }}>
+            <div key={i} style={{ display:'grid', gridTemplateColumns:'1.3fr 70px 90px 1fr 1fr 44px', gap:'6px', marginBottom:'8px', alignItems:'end', background: snapshot.clientesPuntuales[i]?.controlOk ? '#e6ffed' : 'transparent', borderRadius:'8px', padding:'4px', boxSizing:'border-box' }}>
               <Campo seccion="clientesPuntuales" i={i} campo="cliente" delay={5000} placeholder="Nombre cliente" />
-              <Campo seccion="clientesPuntuales" i={i} campo="horaLlegada" type="time" delay={0} />
-              <Campo seccion="clientesPuntuales" i={i} campo="horaSalida" type="time" delay={0} />
               <Campo seccion="clientesPuntuales" i={i} campo="bultos" type="number" delay={3000} />
               <Campo seccion="clientesPuntuales" i={i} campo="palletDesarmar" type="number" delay={3000} />
               <Campo seccion="clientesPuntuales" i={i} campo="comChofer" delay={5000} placeholder="..." />
@@ -827,36 +743,6 @@ export default function Planilla() {
           </div>
         ))}
       </div>
-
-      {/* MODAL REINICIO HORA */}
-      {confirmarReinicio && (
-        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000, padding:'16px' }}>
-          <div style={{ background:'white', borderRadius:'12px', padding:'24px', maxWidth:'340px', width:'100%', boxShadow:'0 4px 20px rgba(0,0,0,0.2)' }}>
-            <p style={{ marginBottom:'18px', color:'#1a1a2e', fontSize:'15px', textAlign:'center' }}>Ya marcaste esta hora. ¿Qué querés hacer?</p>
-
-            <div style={{ marginBottom:'16px' }}>
-              <label style={{ fontSize:'12px', color:'#666', marginBottom:'6px', display:'block' }}>Elegir hora manualmente</label>
-              <div style={{ display:'flex', gap:'8px' }}>
-                <input
-                  type="time"
-                  value={horaManualValor}
-                  onChange={e => setHoraManualValor(e.target.value)}
-                  style={{ flex:1, padding:'10px', border:'1px solid #ddd', borderRadius:'8px', fontSize:'16px', boxSizing:'border-box' }}
-                />
-                <button onClick={() => confirmarHoraManual(horaManualValor)} disabled={!horaManualValor}
-                  style={{ padding:'10px 16px', background: horaManualValor ? '#3182ce' : '#ccc', color:'white', border:'none', borderRadius:'8px', cursor: horaManualValor ? 'pointer' : 'not-allowed', fontWeight:'600', fontSize:'14px' }}>
-                  Usar
-                </button>
-              </div>
-            </div>
-
-            <div style={{ display:'flex', gap:'12px' }}>
-              <button onClick={() => setConfirmarReinicio(null)} style={{ padding:'12px 16px', background:'#f0f0f0', color:'#444', border:'none', borderRadius:'8px', cursor:'pointer', fontWeight:'600', flex:1, fontSize:'13px' }}>Cancelar</button>
-              <button onClick={confirmarReinicioHora} style={{ padding:'12px 16px', background:'#1a1a2e', color:'white', border:'none', borderRadius:'8px', cursor:'pointer', fontWeight:'600', flex:1, fontSize:'13px' }}>Reiniciar a ahora</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       <style>{`
         .berro-tarjetas-chofer { display: none; }

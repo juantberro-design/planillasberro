@@ -42,10 +42,10 @@ export default function RetirosTurno() {
       const choferNombre = choferesMap[choferId] || choferId
 
       ;(data.levantes || []).forEach(l => {
-        if (l.cliente) filas.push({ choferNombre, cliente: l.cliente, tipo: 'Levante', horaLlegada: l.horaLlegada, horaSalida: l.horaSalida, bultos: l.bultos, palletDesarmar: l.palletDesarmar, controlOk: l.controlOk })
+        if (l.cliente) filas.push({ choferNombre, cliente: l.cliente, tipo: 'Levante', bultos: l.bultos, palletDesarmar: l.palletDesarmar, controlOk: l.controlOk })
       })
       ;(data.clientesPuntuales || []).forEach(l => {
-        if (l.cliente) filas.push({ choferNombre, cliente: l.cliente, tipo: 'Puntual', horaLlegada: l.horaLlegada, horaSalida: l.horaSalida, bultos: l.bultos, palletDesarmar: l.palletDesarmar, controlOk: l.controlOk })
+        if (l.cliente) filas.push({ choferNombre, cliente: l.cliente, tipo: 'Puntual', bultos: l.bultos, palletDesarmar: l.palletDesarmar, controlOk: l.controlOk })
       })
     })
 
@@ -109,7 +109,7 @@ export default function RetirosTurno() {
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ background: '#f8f9fa' }}>
-                    {['Chofer', 'Cliente', 'Tipo', 'Llegada', 'Salida', 'Bultos', 'Pallets', '✓'].map(h => (
+                    {['Chofer', 'Cliente', 'Tipo', 'Bultos', 'Pallets', '✓'].map(h => (
                       <th key={h} style={thS}>{h}</th>
                     ))}
                   </tr>
@@ -120,8 +120,6 @@ export default function RetirosTurno() {
                       <td style={{ ...tdS, fontWeight: '600' }}>{r.choferNombre}</td>
                       <td style={{ ...tdS, fontWeight: '600', color: '#3182ce' }}>{r.cliente}</td>
                       <td style={{ ...tdS, fontSize: '12px', color: '#888' }}>{r.tipo}</td>
-                      <td style={tdS}>{r.horaLlegada || '-'}</td>
-                      <td style={tdS}>{r.horaSalida || '-'}</td>
                       <td style={tdS}>{r.bultos || '-'}</td>
                       <td style={tdS}>{r.palletDesarmar || '-'}</td>
                       <td style={tdS}>{r.controlOk ? '✅' : ''}</td>

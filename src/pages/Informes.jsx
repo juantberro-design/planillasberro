@@ -7,19 +7,6 @@ function haceUnMes() {
   const d = new Date(); d.setMonth(d.getMonth()-1); return d.toISOString().split('T')[0]
 }
 
-function minutosEntre(llegada, salida) {
-  if (!llegada || !salida) return null
-  const [lh, lm] = llegada.split(':').map(Number)
-  const [sh, sm] = salida.split(':').map(Number)
-  const diff = (sh * 60 + sm) - (lh * 60 + lm)
-  return diff > 0 ? diff : null
-}
-
-function formatMinutos(min) {
-  if (min === null || min === undefined) return '-'
-  return `${Math.floor(min)}m`
-}
-
 async function fetchDatos(desde, hasta) {
   const registros = []
   let fechaActual = new Date(desde)
@@ -94,7 +81,7 @@ export default function Informes() {
     filtrados.forEach(r => {
       const nombre = r.choferNombre || r.choferId
       if (!porChofer[r.choferId]) {
-        porChofer[r.choferId] = { nombre, dias: new Set(), visitas: 0, bultosTotales: 0, palletsTotales: 0, tiempos: [], clientesVisitados: {} }
+        porChofer[r.choferId] = { nombre, dias: new Set(), visitas: 0, bultosTotales: 0, palletsTotales: 0, clientesVisitados: {} }
       }
       const c = porChofer[r.choferId]
       c.dias.add(r.fecha)
@@ -105,8 +92,6 @@ export default function Informes() {
         c.visitas++
         c.bultosTotales += Number(l.bultos)||0
         c.palletsTotales += Number(l.palletDesarmar)||0
-        const mins = minutosEntre(l.horaLlegada, l.horaSalida)
-        if (mins !== null) c.tiempos.push(mins)
         if (!c.clientesVisitados[l.cliente]) c.clientesVisitados[l.cliente] = 0
         c.clientesVisitados[l.cliente]++
       })
@@ -119,7 +104,6 @@ export default function Informes() {
       bultosTotales: c.bultosTotales,
       bultosPromedio: c.visitas > 0 ? (c.bultosTotales / c.visitas).toFixed(1) : '-',
       palletsTotales: c.palletsTotales,
-      tiempoPromedio: c.tiempos.length > 0 ? formatMinutos(c.tiempos.reduce((a,b)=>a+b,0)/c.tiempos.length) : '-',
       clienteTop: Object.entries(c.clientesVisitados).sort((a,b)=>b[1]-a[1])[0]?.[0] || '-'
     })).sort((a,b) => b.bultosTotales - a.bultosTotales)
 
@@ -135,17 +119,15 @@ export default function Informes() {
         if (!l.cliente) return
         if (clienteFiltro && l.cliente !== clienteFiltro) return
         if (!porCliente[l.cliente]) {
-          porCliente[l.cliente] = { visitas: 0, bultosTotales: 0, tiempos: [], choferes: {}, fechas: [] }
+          porCliente[l.cliente] = { visitas: 0, bultosTotales: 0, choferes: {}, fechas: [] }
         }
         const c = porCliente[l.cliente]
         c.visitas++
         c.bultosTotales += Number(l.bultos)||0
-        const mins = minutosEntre(l.horaLlegada, l.horaSalida)
-        if (mins !== null) c.tiempos.push(mins)
         const choferNombre = r.choferNombre || r.choferId
         if (!c.choferes[choferNombre]) c.choferes[choferNombre] = 0
         c.choferes[choferNombre]++
-        c.fechas.push({ fecha: r.fecha, chofer: choferNombre, bultos: l.bultos, horaLlegada: l.horaLlegada, horaSalida: l.horaSalida, mins })
+        c.fechas.push({ fecha: r.fecha, chofer: choferNombre, bultos: l.bultos })
       })
     })
 
@@ -154,8 +136,6 @@ export default function Informes() {
       visitas: c.visitas,
       bultosTotales: c.bultosTotales,
       bultosPromedio: c.visitas > 0 ? (c.bultosTotales / c.visitas).toFixed(1) : '-',
-      tiempoPromedio: c.tiempos.length > 0 ? formatMinutos(c.tiempos.reduce((a,b)=>a+b,0)/c.tiempos.length) : '-',
-      tiempoTotal: c.tiempos.length > 0 ? formatMinutos(c.tiempos.reduce((a,b)=>a+b,0)) : '-',
       choferes: Object.entries(c.choferes).sort((a,b)=>b[1]-a[1]).map(([n,v])=>`${n} (${v})`).join(', '),
       detalle: c.fechas.sort((a,b)=>a.fecha.localeCompare(b.fecha))
     })).sort((a,b) => b.visitas - a.visitas)
@@ -256,14 +236,14 @@ export default function Informes() {
               <table style={{ width:'100%', borderCollapse:'collapse' }}>
                 <thead>
                   <tr style={{ background:'#f8f9fa' }}>
-                    {['Chofer','Días trabajados','Visitas','Bultos totales','Promedio bultos/visita','Pallets a desarmar','Tiempo prom. por cliente','Cliente más frecuente'].map(h => (
+                    {['Chofer','Días trabajados','Visitas','Bultos totales','Promedio bultos/visita','Pallets a desarmar','Cliente más frecuente'].map(h => (
                       <th key={h} style={thS}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {resultados.filas.length === 0 ? (
-                    <tr><td colSpan={8} style={{ ...tdS, textAlign:'center', color:'#888' }}>Sin datos para el período seleccionado</td></tr>
+                    <tr><td colSpan={7} style={{ ...tdS, textAlign:'center', color:'#888' }}>Sin datos para el período seleccionado</td></tr>
                   ) : resultados.filas.map((f,i) => (
                     <tr key={i}>
                       <td style={{ ...tdS, fontWeight:'600' }}>{f.nombre}</td>
@@ -272,7 +252,6 @@ export default function Informes() {
                       <td style={{ ...tdS, fontWeight:'600', color:'#3182ce' }}>{f.bultosTotales}</td>
                       <td style={tdS}>{f.bultosPromedio}</td>
                       <td style={tdS}>{f.palletsTotales}</td>
-                      <td style={tdS}>{f.tiempoPromedio}</td>
                       <td style={{ ...tdS, fontSize:'13px' }}>{f.clienteTop}</td>
                     </tr>
                   ))}
@@ -291,7 +270,7 @@ export default function Informes() {
                 <table style={{ width:'100%', borderCollapse:'collapse' }}>
                   <thead>
                     <tr style={{ background:'#f8f9fa' }}>
-                      {['Fecha','Cliente más visitado','Visitas','Bultos','Tiempo promedio'].map(h => <th key={h} style={thS}>{h}</th>)}
+                      {['Fecha','Cliente más visitado','Visitas','Bultos'].map(h => <th key={h} style={thS}>{h}</th>)}
                     </tr>
                   </thead>
                   <tbody>
@@ -300,7 +279,6 @@ export default function Informes() {
                         <td style={tdS}>{'-'}</td>
                         <td style={{ ...tdS, fontWeight:'600' }}>{cliente}</td>
                         <td style={tdS}>{visitas}</td>
-                        <td style={tdS}>{'-'}</td>
                         <td style={tdS}>{'-'}</td>
                       </tr>
                     ))}
@@ -323,22 +301,20 @@ export default function Informes() {
               <table style={{ width:'100%', borderCollapse:'collapse' }}>
                 <thead>
                   <tr style={{ background:'#f8f9fa' }}>
-                    {['Cliente','Visitas','Bultos totales','Promedio bultos/visita','Tiempo promedio','Tiempo total','Choferes que visitaron'].map(h => (
+                    {['Cliente','Visitas','Bultos totales','Promedio bultos/visita','Choferes que visitaron'].map(h => (
                       <th key={h} style={thS}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {resultados.filas.length === 0 ? (
-                    <tr><td colSpan={7} style={{ ...tdS, textAlign:'center', color:'#888' }}>Sin datos para el período seleccionado</td></tr>
+                    <tr><td colSpan={5} style={{ ...tdS, textAlign:'center', color:'#888' }}>Sin datos para el período seleccionado</td></tr>
                   ) : resultados.filas.map((f,i) => (
                     <tr key={i}>
                       <td style={{ ...tdS, fontWeight:'600' }}>{f.nombre}</td>
                       <td style={tdS}>{f.visitas}</td>
                       <td style={{ ...tdS, fontWeight:'600', color:'#3182ce' }}>{f.bultosTotales}</td>
                       <td style={tdS}>{f.bultosPromedio}</td>
-                      <td style={tdS}>{f.tiempoPromedio}</td>
-                      <td style={tdS}>{f.tiempoTotal}</td>
                       <td style={{ ...tdS, fontSize:'12px', color:'#666' }}>{f.choferes}</td>
                     </tr>
                   ))}
@@ -357,7 +333,7 @@ export default function Informes() {
                 <table style={{ width:'100%', borderCollapse:'collapse' }}>
                   <thead>
                     <tr style={{ background:'#f8f9fa' }}>
-                      {['Fecha','Chofer','Llegada','Salida','Tiempo','Bultos'].map(h => <th key={h} style={thS}>{h}</th>)}
+                      {['Fecha','Chofer','Bultos'].map(h => <th key={h} style={thS}>{h}</th>)}
                     </tr>
                   </thead>
                   <tbody>
@@ -365,9 +341,6 @@ export default function Informes() {
                       <tr key={i}>
                         <td style={tdS}>{d.fecha}</td>
                         <td style={{ ...tdS, fontWeight:'600' }}>{d.chofer}</td>
-                        <td style={tdS}>{d.horaLlegada||'-'}</td>
-                        <td style={tdS}>{d.horaSalida||'-'}</td>
-                        <td style={tdS}>{d.mins!==null ? formatMinutos(d.mins) : '-'}</td>
                         <td style={tdS}>{d.bultos||'-'}</td>
                       </tr>
                     ))}

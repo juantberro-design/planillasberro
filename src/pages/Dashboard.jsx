@@ -13,9 +13,10 @@ function turnoActual() {
   return new Date().getHours() < 12 ? 'mañana' : 'tarde'
 }
 
-// Un levante/cliente puntual cuenta como "completo" si tiene cliente + ambos horarios + bultos
+// Un levante/cliente puntual cuenta como "completo" cuando la oficina le marcó el tilde azul de control.
+// (Ya no se usan los horarios de llegada/salida: esa información ahora viene del GPS.)
 function levanteCompleto(l) {
-  return !!(l.cliente && l.horaLlegada && l.horaSalida && l.bultos)
+  return !!(l.cliente && l.controlOk)
 }
 
 // Una entrega cuenta como "completa" si tiene remitente o destinatario Y la oficina confirmó el remito firmado
@@ -35,10 +36,10 @@ function calcularProgreso(data) {
   }
 }
 
-function ProgresoLinea({ label, valor, blanco }) {
+function ProgresoLinea({ label, valor, colorFijo }) {
   if (valor.total === 0) return null
   const completo = valor.hechos === valor.total
-  const color = blanco ? 'white' : (completo ? '#38a169' : '#444')
+  const color = colorFijo || (completo ? '#38a169' : '#444')
   return (
     <div style={{ fontSize: '11px', fontWeight: '700', color, whiteSpace: 'nowrap' }}>
       {label} {valor.hechos}/{valor.total}
@@ -46,12 +47,30 @@ function ProgresoLinea({ label, valor, blanco }) {
   )
 }
 
-// La tarjeta del chofer se pinta de verde cuando tiene al menos algo asignado
-// y TODO lo que tiene (levantes, entregas y puntuales) está completo
-function choferCompleto(progreso) {
-  if (!progreso) return false
-  const partes = [progreso.levantes, progreso.entregas, progreso.puntuales].filter(p => p.total > 0)
-  return partes.length > 0 && partes.every(p => p.hechos === p.total)
+function parteLista(p) {
+  return p.hechos === p.total
+}
+
+// Color de la tarjeta del chofer:
+//  - 'verde':    tiene algo asignado y TODO está listo (levantes, puntuales y entregas)
+//  - 'amarillo': levantes y puntuales listos (tiene al menos uno), pero falta el OK de alguna entrega
+//  - null:       cualquier otro caso (tarjeta blanca)
+function estadoChofer(progreso) {
+  if (!progreso) return null
+  const { levantes, puntuales, entregas } = progreso
+  const tieneAlgo = levantes.total + puntuales.total + entregas.total > 0
+  if (!tieneAlgo) return null
+  const retirosListos = parteLista(levantes) && parteLista(puntuales)
+  if (retirosListos && parteLista(entregas)) return 'verde'
+  if (retirosListos && levantes.total + puntuales.total > 0) return 'amarillo'
+  return null
+}
+
+// Colores de cada estado: fondo, borde, texto principal y texto secundario
+const COLORES_TARJETA = {
+  verde:    { fondo: '#22A04B', borde: '#1C8A40', texto: 'white',   textoSuave: '#E3F5E8' },
+  amarillo: { fondo: '#F6C744', borde: '#DDA916', texto: '#4A3500', textoSuave: '#6B5210' },
+  blanco:   { fondo: 'white',   borde: '#e2e8f0', texto: '#1a1a2e', textoSuave: '#888' }
 }
 
 export default function Dashboard() {
@@ -177,8 +196,6 @@ export default function Dashboard() {
               turno: turnoDoc,
               cliente: l.cliente,
               seccion: l.seccion,
-              horaLlegada: l.horaLlegada,
-              horaSalida: l.horaSalida,
               bultos: l.bultos,
               palletDesarmar: l.palletDesarmar
             })
@@ -289,7 +306,6 @@ export default function Dashboard() {
                         <span style={{ background: '#e2e8f0', padding: '2px 8px', borderRadius: '10px', fontSize: '12px', color: '#444' }}>{r.turno}</span>
                         <span style={{ fontWeight: '600', color: '#3182ce' }}>{r.cliente}</span>
                         <span style={{ fontSize: '12px', color: '#888' }}>{r.seccion}</span>
-                        {r.horaLlegada && <span style={{ fontSize: '12px', color: '#666' }}>🕐 {r.horaLlegada}{r.horaSalida ? ` → ${r.horaSalida}` : ''}</span>}
                         {r.bultos && <span style={{ fontSize: '12px', color: '#666' }}>📦 {r.bultos} bultos</span>}
                       </div>
                     ))}
@@ -326,25 +342,28 @@ export default function Dashboard() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: '12px' }}>
           {choferesFiltrados.map(chofer => {
             const progreso = progresoPorChofer[chofer.id]
-            const completo = esOficina && choferCompleto(progreso)
+            const estado = esOficina ? estadoChofer(progreso) : null
+            const colores = COLORES_TARJETA[estado || 'blanco']
+            // En blanco, los contadores mantienen su color normal (verde si esa parte está completa)
+            const colorContador = estado ? colores.texto : null
             return (
               <div
                 key={chofer.id}
                 onClick={() => navigate(`/planilla/${fecha}/${chofer.id}${esOficina ? `?turno=${turno}` : ''}`)}
-                style={{ background: completo ? '#22A04B' : 'white', border: completo ? '1px solid #1C8A40' : '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', position: 'relative' }}
+                style={{ background: colores.fondo, border: `1px solid ${colores.borde}`, borderRadius: '12px', padding: '16px', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', position: 'relative' }}
                 onMouseOver={e => e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.12)'}
                 onMouseOut={e => e.currentTarget.style.boxShadow = '0 1px 4px rgba(0,0,0,0.06)'}
               >
                 {esOficina && progreso && (
                   <div style={{ position: 'absolute', top: '10px', right: '10px', textAlign: 'right' }}>
-                    <ProgresoLinea label="Levantes" valor={progreso.levantes} blanco={completo} />
-                    <ProgresoLinea label="Entregas" valor={progreso.entregas} blanco={completo} />
-                    <ProgresoLinea label="Puntuales" valor={progreso.puntuales} blanco={completo} />
+                    <ProgresoLinea label="Levantes" valor={progreso.levantes} colorFijo={colorContador} />
+                    <ProgresoLinea label="Entregas" valor={progreso.entregas} colorFijo={colorContador} />
+                    <ProgresoLinea label="Puntuales" valor={progreso.puntuales} colorFijo={colorContador} />
                   </div>
                 )}
                 <div style={{ fontSize: '28px', marginBottom: '8px' }}>🚚</div>
-                <div style={{ fontWeight: '600', color: completo ? 'white' : '#1a1a2e' }}>{chofer.nombre}</div>
-                <div style={{ fontSize: '13px', color: completo ? '#E3F5E8' : '#888', marginTop: '4px' }}>{fecha}{esOficina ? ` · ${turno}` : ''}</div>
+                <div style={{ fontWeight: '600', color: colores.texto }}>{chofer.nombre}</div>
+                <div style={{ fontSize: '13px', color: colores.textoSuave, marginTop: '4px' }}>{fecha}{esOficina ? ` · ${turno}` : ''}</div>
               </div>
             )
           })}

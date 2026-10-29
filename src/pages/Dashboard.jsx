@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { collection, getDocs, onSnapshot } from 'firebase/firestore'
+import { collection, getDocs, getDoc, addDoc, deleteDoc, doc, onSnapshot } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useAuth } from '../hooks/useAuth.jsx'
 
@@ -45,6 +45,17 @@ function ProgresoLinea({ label, valor, colorFijo }) {
       {label} {valor.hechos}/{valor.total}
     </div>
   )
+}
+
+// Una planilla está "vacía" si no tiene ningún levante, puntual, entrega ni devolución cargada.
+// Se usa para permitir borrar un chofer puntual solo cuando no se pierde nada.
+function planillaVacia(data) {
+  if (!data) return true
+  const hayLevantes = (data.levantes || []).some(l => l.cliente)
+  const hayPuntuales = (data.clientesPuntuales || []).some(l => l.cliente)
+  const hayEntregas = (data.entregas || []).some(e => e.remitente || e.destinatario)
+  const hayDevoluciones = (data.devoluciones || []).some(d => d.cliente || d.cantidad)
+  return !(hayLevantes || hayPuntuales || hayEntregas || hayDevoluciones)
 }
 
 function parteLista(p) {
@@ -99,7 +110,8 @@ export default function Dashboard() {
     sessionStorage.setItem('dashboard_fecha', fechaHoy)
     setFecha(fechaHoy)
   }
-  const [choferes, setChoferes] = useState([])
+  // Todos los choferes de la base: los fijos y los puntuales de cualquier día
+  const [todosChoferes, setTodosChoferes] = useState([])
   const [progresoPorChofer, setProgresoPorChofer] = useState({}) // { choferId: { levantes, puntuales, entregas } }
   const [cargando, setCargando] = useState(true)
   const [cargandoProgreso, setCargandoProgreso] = useState(false)
@@ -109,28 +121,47 @@ export default function Dashboard() {
   const [buscando, setBuscando] = useState(false)
   const [resultadosBusqueda, setResultadosBusqueda] = useState(null)
 
+  // Chofer puntual (contratado por un día y turno)
+  const [mostrarAgregarPuntual, setMostrarAgregarPuntual] = useState(false)
+  const [nombrePuntual, setNombrePuntual] = useState('')
+  const [guardandoPuntual, setGuardandoPuntual] = useState(false)
+  const [avisoPuntual, setAvisoPuntual] = useState('')
+
   const esChofer = usuario.rol === 'chofer'
   const esOficina = usuario.rol === 'admin' || usuario.rol === 'operador'
 
+  // Lista de choferes en tiempo real: así, si un operador agrega un chofer
+  // puntual, a los demás operadores les aparece sin recargar la página.
   useEffect(() => {
-    async function cargarChoferes() {
-      const snap = await getDocs(collection(db, 'choferes'))
-      const lista = snap.docs
-        .map(d => ({ id: d.id, ...d.data() }))
-        .filter(c => c.activo)
-        .sort((a, b) => (a.orden || 0) - (b.orden || 0))
-      setChoferes(lista)
-      setCargando(false)
-    }
-    cargarChoferes()
+    const unsub = onSnapshot(
+      collection(db, 'choferes'),
+      snap => {
+        setTodosChoferes(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+        setCargando(false)
+      },
+      () => setCargando(false)
+    )
+    return () => unsub()
   }, [])
+
+  // Choferes que se muestran en la grilla:
+  //  - los fijos que están activos (en el orden de Admin)
+  //  - después, los puntuales creados para ESTA fecha y ESTE turno (en el orden en que se agregaron)
+  const fijos = todosChoferes
+    .filter(c => !c.puntual && c.activo)
+    .sort((a, b) => (a.orden || 0) - (b.orden || 0))
+  const puntualesDelTurno = todosChoferes
+    .filter(c => c.puntual && c.fecha === fecha && c.turno === turno)
+    .sort((a, b) => (a.creadoAt || 0) - (b.creadoAt || 0))
+  const choferes = [...fijos, ...puntualesDelTurno]
+  const hayChoferes = todosChoferes.length > 0
 
   // Escucha en tiempo real la carpeta de choferes del día/turno seleccionado.
   // Antes esto se leía una sola vez con getDocs, así que si un chofer marcaba
   // algo en el celular, la oficina no lo veía hasta recargar la página a mano.
   // Con onSnapshot, Firestore empuja los cambios apenas se guardan.
   useEffect(() => {
-    if (!esOficina || choferes.length === 0) return
+    if (!esOficina || !hayChoferes) return
     setCargandoProgreso(true)
     const unsub = onSnapshot(
       collection(db, 'planillas', fecha, 'choferes'),
@@ -152,7 +183,7 @@ export default function Dashboard() {
       }
     )
     return () => unsub()
-  }, [fecha, turno, choferes, esOficina])
+  }, [fecha, turno, hayChoferes, esOficina])
 
   const choferesFiltrados = esChofer
     ? choferes.filter(c => c.id === usuario.choferId)
@@ -165,6 +196,53 @@ export default function Dashboard() {
     acc.entregas.hechos += p.entregas.hechos; acc.entregas.total += p.entregas.total
     return acc
   }, { levantes: { hechos: 0, total: 0 }, puntuales: { hechos: 0, total: 0 }, entregas: { hechos: 0, total: 0 } })
+
+  function abrirAgregarPuntual() {
+    setNombrePuntual('')
+    setAvisoPuntual('')
+    setMostrarAgregarPuntual(true)
+  }
+
+  async function agregarPuntual() {
+    const nombre = nombrePuntual.trim()
+    if (!nombre) {
+      setAvisoPuntual('Escribí el nombre del chofer.')
+      return
+    }
+    setGuardandoPuntual(true)
+    setAvisoPuntual('')
+    try {
+      await addDoc(collection(db, 'choferes'), {
+        nombre,
+        puntual: true,
+        activo: false, // así no aparece como chofer fijo en ninguna lista
+        fecha,
+        turno,
+        creadoAt: Date.now(),
+        creadoPor: usuario.nombre || usuario.email || ''
+      })
+      setMostrarAgregarPuntual(false)
+    } catch {
+      setAvisoPuntual('No se pudo agregar el chofer. Revisá la conexión y probá de nuevo.')
+    }
+    setGuardandoPuntual(false)
+  }
+
+  async function borrarPuntual(chofer) {
+    try {
+      const ref = doc(db, 'planillas', fecha, 'choferes', `${chofer.id}_${turno}`)
+      const snap = await getDoc(ref)
+      if (!planillaVacia(snap.exists() ? snap.data() : null)) {
+        window.alert(`No se puede borrar a ${chofer.nombre} porque su planilla ya tiene cosas cargadas.`)
+        return
+      }
+      if (!window.confirm(`¿Borrar el chofer puntual ${chofer.nombre}?`)) return
+      if (snap.exists()) await deleteDoc(ref)
+      await deleteDoc(doc(db, 'choferes', chofer.id))
+    } catch {
+      window.alert('No se pudo borrar el chofer. Revisá la conexión y probá de nuevo.')
+    }
+  }
 
   async function buscarCliente() {
     if (!busqueda.trim()) return
@@ -180,7 +258,7 @@ export default function Dashboard() {
         const parts = docSnap.id.split('_')
         const choferId = parts[0]
         const turnoDoc = parts[1]
-        const choferReal = choferes.find(c => c.id === choferId)
+        const choferReal = todosChoferes.find(c => c.id === choferId)
         const choferNombre = choferReal ? choferReal.nombre : choferId
 
         const allLevantes = [
@@ -362,11 +440,73 @@ export default function Dashboard() {
                   </div>
                 )}
                 <div style={{ fontSize: '28px', marginBottom: '8px' }}>🚚</div>
+                {chofer.puntual && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+                    <span style={{ background: estado ? 'rgba(255,255,255,0.35)' : '#ebf4ff', color: estado ? colores.texto : '#2b6cb0', fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '10px' }}>
+                      Puntual
+                    </span>
+                    {esOficina && (
+                      <button
+                        onClick={e => { e.stopPropagation(); borrarPuntual(chofer) }}
+                        title="Borrar chofer puntual"
+                        style={{ background: 'transparent', border: 'none', color: estado ? colores.texto : '#e53e3e', cursor: 'pointer', fontSize: '13px', padding: '2px 4px', lineHeight: 1 }}>
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                )}
                 <div style={{ fontWeight: '600', color: colores.texto }}>{chofer.nombre}</div>
                 <div style={{ fontSize: '13px', color: colores.textoSuave, marginTop: '4px' }}>{fecha}{esOficina ? ` · ${turno}` : ''}</div>
               </div>
             )
           })}
+          {esOficina && (
+            <div
+              onClick={abrirAgregarPuntual}
+              style={{ border: '2px dashed #cbd5e0', borderRadius: '12px', padding: '16px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#4a5568', minHeight: '100px', background: 'transparent' }}
+              onMouseOver={e => e.currentTarget.style.background = '#f7fafc'}
+              onMouseOut={e => e.currentTarget.style.background = 'transparent'}
+            >
+              <div style={{ fontSize: '28px', fontWeight: '300', lineHeight: 1 }}>+</div>
+              <div style={{ fontSize: '13px', fontWeight: '600', marginTop: '6px', textAlign: 'center' }}>Agregar chofer puntual</div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* VENTANA PARA AGREGAR CHOFER PUNTUAL */}
+      {mostrarAgregarPuntual && (
+        <div
+          onClick={() => !guardandoPuntual && setMostrarAgregarPuntual(false)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px' }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: 'white', borderRadius: '12px', padding: '24px', maxWidth: '360px', width: '100%', boxShadow: '0 4px 20px rgba(0,0,0,0.2)', boxSizing: 'border-box' }}>
+            <h3 style={{ margin: '0 0 6px', color: '#1a1a2e' }}>Agregar chofer puntual</h3>
+            <p style={{ margin: '0 0 16px', fontSize: '13px', color: '#666' }}>
+              Solo para el {fecha.split('-').reverse().join('/')}, turno {turno}.
+            </p>
+            <label style={{ fontSize: '13px', color: '#666', marginBottom: '6px', display: 'block' }}>Nombre del chofer</label>
+            <input
+              autoFocus
+              type="text"
+              value={nombrePuntual}
+              onChange={e => { setNombrePuntual(e.target.value); setAvisoPuntual('') }}
+              onKeyDown={e => e.key === 'Enter' && agregarPuntual()}
+              placeholder="Ej: Juan Pérez"
+              style={{ width: '100%', padding: '11px 12px', border: '1px solid #ddd', borderRadius: '8px', fontSize: '16px', boxSizing: 'border-box' }}
+            />
+            {avisoPuntual && <p style={{ margin: '8px 0 0', fontSize: '13px', color: '#e53e3e' }}>{avisoPuntual}</p>}
+            <div style={{ display: 'flex', gap: '10px', marginTop: '18px' }}>
+              <button onClick={() => setMostrarAgregarPuntual(false)} disabled={guardandoPuntual}
+                style={{ flex: 1, padding: '12px', background: '#f0f0f0', color: '#444', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', fontSize: '14px' }}>
+                Cancelar
+              </button>
+              <button onClick={agregarPuntual} disabled={guardandoPuntual}
+                style={{ flex: 1, padding: '12px', background: '#1a1a2e', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', fontSize: '14px' }}>
+                {guardandoPuntual ? 'Agregando...' : 'Agregar'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

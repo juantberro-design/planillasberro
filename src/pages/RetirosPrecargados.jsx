@@ -31,7 +31,7 @@ export default function RetirosPrecargados() {
       getDocs(collection(db, 'choferes')),
       getDocs(collection(db, 'clientes'))
     ])
-    const listaChoferes = snapChoferes.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.orden || 0) - (b.orden || 0))
+    const listaChoferes = snapChoferes.docs.map(d => ({ id: d.id, ...d.data() })).filter(c => !c.puntual).sort((a, b) => (a.orden || 0) - (b.orden || 0))
     setChoferes(listaChoferes)
     setTodosClientes(snapClientes.docs.map(d => d.data().nombre).sort())
     if (listaChoferes.length > 0) setChoferId(listaChoferes[0].id)

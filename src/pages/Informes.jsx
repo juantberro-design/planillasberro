@@ -52,7 +52,7 @@ export default function Informes() {
         getDocs(collection(db, 'choferes')),
         getDocs(collection(db, 'clientes'))
       ])
-      setChoferes(sc.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => (a.orden||0)-(b.orden||0)))
+      setChoferes(sc.docs.map(d => ({ id: d.id, ...d.data() })).filter(c => !c.puntual).sort((a,b) => (a.orden||0)-(b.orden||0)))
       setClientes(sk.docs.map(d => d.data().nombre).sort())
     }
     cargar()

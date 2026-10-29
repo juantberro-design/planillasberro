@@ -101,7 +101,8 @@ export default function Admin() {
       getDoc(doc(db, 'config', 'pallets'))
     ])
     setUsuarios(snapUsuarios.docs.map(d => ({ uid: d.id, ...d.data() })))
-    setChoferes(snapChoferes.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.orden || 0) - (b.orden || 0)))
+    // Los choferes puntuales (de un solo día) no se muestran acá: se manejan desde el inicio
+    setChoferes(snapChoferes.docs.map(d => ({ id: d.id, ...d.data() })).filter(c => !c.puntual).sort((a, b) => (a.orden || 0) - (b.orden || 0)))
     setClientes(snapClientes.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => a.nombre.localeCompare(b.nombre)))
     if (snapConfig.exists()) {
       setClientesPallets(snapConfig.data().clientes || [])

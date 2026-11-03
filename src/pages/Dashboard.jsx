@@ -2,10 +2,11 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { collection, getDocs, getDoc, addDoc, deleteDoc, doc, onSnapshot } from 'firebase/firestore'
 import { db } from '../firebase'
+import { hoyLocal } from '../utils/fechas'
 import { useAuth } from '../hooks/useAuth.jsx'
 
 function hoy() {
-  return new Date().toISOString().split('T')[0]
+  return hoyLocal()
 }
 
 // Antes de las 12:00 -> mañana, después -> tarde

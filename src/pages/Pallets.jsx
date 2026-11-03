@@ -1,16 +1,15 @@
 import { useState, useEffect } from 'react'
 import { collection, getDocs, doc, getDoc } from 'firebase/firestore'
 import { db } from '../firebase'
+import { hoyLocal, haceUnMesLocal } from '../utils/fechas'
 import SelectorCliente from '../components/SelectorCliente.jsx'
 
 function fechaHoy() {
-  return new Date().toISOString().split('T')[0]
+  return hoyLocal()
 }
 
 function fechaHaceUnMes() {
-  const d = new Date()
-  d.setMonth(d.getMonth() - 1)
-  return d.toISOString().split('T')[0]
+  return haceUnMesLocal()
 }
 
 // Fecha desde la que arranca a usarse el sistema (saldo total acumulado desde acá)

@@ -10,6 +10,7 @@ import ImprimirPlanillas from './pages/ImprimirPlanillas'
 import RetirosTurno from './pages/RetirosTurno'
 import RetirosPrecargados from './pages/RetirosPrecargados'
 import Configuracion from './pages/Configuracion'
+import Seguimiento from './pages/Seguimiento'
 import Layout from './components/Layout'
 
 function PrivateRoute({ children, roles }) {
@@ -18,6 +19,13 @@ function PrivateRoute({ children, roles }) {
   if (!usuario) return <Navigate to="/login" />
   if (roles && !roles.includes(usuario.rol)) return <Navigate to="/" />
   return children
+}
+
+// La pantalla de inicio depende del rol: el supervisor va directo a Seguimiento
+function Inicio() {
+  const { usuario } = useAuth()
+  if (usuario?.rol === 'supervisor') return <Navigate to="/seguimiento" replace />
+  return <Dashboard />
 }
 
 export default function App() {
@@ -30,8 +38,17 @@ export default function App() {
             <Layout />
           </PrivateRoute>
         }>
-          <Route index element={<Dashboard />} />
-          <Route path="planilla/:fecha/:choferId" element={<Planilla />} />
+          <Route index element={<Inicio />} />
+          <Route path="planilla/:fecha/:choferId" element={
+            <PrivateRoute roles={['admin','operador','chofer']}>
+              <Planilla />
+            </PrivateRoute>
+          } />
+          <Route path="seguimiento" element={
+            <PrivateRoute roles={['supervisor','admin']}>
+              <Seguimiento />
+            </PrivateRoute>
+          } />
           <Route path="pallets" element={
             <PrivateRoute roles={['admin','operador']}>
               <Pallets />

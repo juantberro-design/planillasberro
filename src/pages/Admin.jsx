@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
 import { collection, getDocs, doc, setDoc, updateDoc, deleteDoc, getDoc, query, orderBy, increment } from 'firebase/firestore'
 import { db } from '../firebase'
+import { hoyLocal } from '../utils/fechas'
 
-const ROLES = ['admin', 'operador', 'chofer']
+const ROLES = ['admin', 'operador', 'chofer', 'supervisor']
 
 const inputStyle = {
   width: '100%',
@@ -48,7 +49,7 @@ export default function Admin() {
   const [exito, setExito] = useState('')
 
   // Historial
-  const [histFecha, setHistFecha] = useState(new Date().toISOString().split('T')[0])
+  const [histFecha, setHistFecha] = useState(hoyLocal())
   const [histChoferId, setHistChoferId] = useState('')
   const [histTurno, setHistTurno] = useState('mañana')
   const [histRegistros, setHistRegistros] = useState([])
@@ -229,7 +230,7 @@ export default function Admin() {
     await setDoc(doc(db, 'config', 'pallets'), { clientes: nuevos })
   }
 
-  const rolColor = { admin: '#e53e3e', operador: '#3182ce', chofer: '#38a169' }
+  const rolColor = { admin: '#e53e3e', operador: '#3182ce', chofer: '#38a169', supervisor: '#805ad5' }
 
   async function buscarHistorial() {
     if (!histChoferId) return

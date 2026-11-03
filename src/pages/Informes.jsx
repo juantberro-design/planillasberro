@@ -1,11 +1,10 @@
 import { useState, useEffect } from 'react'
 import { collection, getDocs } from 'firebase/firestore'
 import { db } from '../firebase'
+import { hoyLocal, haceUnMesLocal } from '../utils/fechas'
 
-function hoy() { return new Date().toISOString().split('T')[0] }
-function haceUnMes() {
-  const d = new Date(); d.setMonth(d.getMonth()-1); return d.toISOString().split('T')[0]
-}
+function hoy() { return hoyLocal() }
+function haceUnMes() { return haceUnMesLocal() }
 
 async function fetchDatos(desde, hasta) {
   const registros = []

@@ -2,9 +2,10 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { collection, getDocs } from 'firebase/firestore'
 import { db } from '../firebase'
+import { hoyLocal } from '../utils/fechas'
 
 function hoy() {
-  return new Date().toISOString().split('T')[0]
+  return hoyLocal()
 }
 
 const thS = { padding: '10px 14px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: '#666', borderBottom: '2px solid #e2e8f0' }

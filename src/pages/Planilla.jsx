@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback, useState } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { doc, getDoc, setDoc, addDoc, serverTimestamp, collection, getDocs, increment, onSnapshot } from 'firebase/firestore'
 import { db } from '../firebase'
+import { hoyLocal } from '../utils/fechas'
 import { useAuth } from '../hooks/useAuth.jsx'
 import SelectorCliente from '../components/SelectorCliente.jsx'
 
@@ -84,7 +85,7 @@ function calcularDeltasPallets(anterior, nuevo) {
   return deltas
 }
 
-function hoy() { return new Date().toISOString().split('T')[0] }
+function hoy() { return hoyLocal() }
 // Antes de las 12:00 -> mañana, después -> tarde
 function turnoActual() { return new Date().getHours() < 12 ? 'mañana' : 'tarde' }
 let contadorId = 0

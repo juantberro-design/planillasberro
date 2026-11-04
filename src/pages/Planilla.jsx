@@ -91,8 +91,21 @@ function turnoActual() { return new Date().getHours() < 12 ? 'mañana' : 'tarde'
 let contadorId = 0
 const crearIdEntrega = () => `e${Date.now()}-${(contadorId++).toString(36)}`
 const entregaVacia = () => ({ id: crearIdEntrega(), remitente:'', destinatario:'', aCobrar:'', bultos:'', remito:'', comentarios:'', ok:false, remitoOk:false })
-const levanteVacio = () => ({ cliente:'', bultos:'', palletDesarmar:'', comChofer:'', comOficina:'', controlOk:false })
-const puntualVacio = () => ({ cliente:'', bultos:'', palletDesarmar:'', comChofer:'', comOficina:'', controlOk:false })
+// estPallets / estBultos = carga estimada del retiro (la cargan el coordinador o el admin)
+const levanteVacio = () => ({ cliente:'', estPallets:'', estBultos:'', bultos:'', palletDesarmar:'', comChofer:'', comOficina:'', controlOk:false })
+const puntualVacio = () => ({ cliente:'', estPallets:'', estBultos:'', bultos:'', palletDesarmar:'', comChofer:'', comOficina:'', controlOk:false })
+
+// Columnas de la tabla de retiros: Cliente | Est. pallets | Est. bultos | Bultos | Pallets a desarmar | Com. chofer | Com. oficina | ✓
+const GRILLA_RETIROS = '1.3fr 64px 64px 70px 90px 1fr 1fr 44px'
+const TITULOS_RETIROS = ['Cliente','Est. pallets','Est. bultos','Bultos','Pallets a desarmar','Com. chofer','Com. oficina','✓']
+
+// "2 pallets · 15 bultos" (o vacío si no hay estimado)
+function textoEstimado(l) {
+  const partes = []
+  if (l.estPallets) partes.push(`${l.estPallets} ${Number(l.estPallets) === 1 ? 'pallet' : 'pallets'}`)
+  if (l.estBultos) partes.push(`${l.estBultos} ${Number(l.estBultos) === 1 ? 'bulto' : 'bultos'}`)
+  return partes.join(' · ')
+}
 const devVacia = () => ({ cliente:'', cantidad:'' })
 
 const IS = { width:'100%', padding:'10px', border:'1px solid #ddd', borderRadius:'6px', fontSize:'16px', boxSizing:'border-box' }
@@ -183,7 +196,9 @@ export default function Planilla() {
   const navigate = useNavigate()
 
   const esChofer = usuario.rol === 'chofer'
-  const esOficina = usuario.rol === 'admin' || usuario.rol === 'operador'
+  const esOficina = ['admin', 'operador', 'coordinador'].includes(usuario.rol)
+  // Solo el coordinador y el admin pueden escribir la carga estimada
+  const puedeEstimar = ['admin', 'coordinador'].includes(usuario.rol)
   const soloLectura = esChofer && fecha < hoy()
 
   const [nombreChofer, setNombreChofer] = useState('')
@@ -550,7 +565,7 @@ export default function Planilla() {
   function FilaLevante({ l, i, seccion, clienteEditable, oficina }) {
     const controlOk = snapshot[seccion][i]?.controlOk || false
     return (
-      <div style={{ display:'grid', gridTemplateColumns:'1.3fr 70px 90px 1fr 1fr 44px', gap:'6px', marginBottom:'8px', alignItems:'end', background: controlOk ? '#e6ffed' : 'transparent', borderRadius:'8px', padding:'4px', boxSizing:'border-box' }}>
+      <div style={{ display:'grid', gridTemplateColumns:GRILLA_RETIROS, gap:'6px', marginBottom:'8px', alignItems:'end', background: controlOk ? '#e6ffed' : 'transparent', borderRadius:'8px', padding:'4px', boxSizing:'border-box' }}>
         <div>
           {clienteEditable ? (
             <SelectorCliente
@@ -564,6 +579,8 @@ export default function Planilla() {
             <div style={{...ISD, display:'flex', alignItems:'center'}}>{l.cliente}</div>
           )}
         </div>
+        <div><Campo seccion={seccion} i={i} campo="estPallets" type="number" delay={3000} disabled={soloLectura || !puedeEstimar} /></div>
+        <div><Campo seccion={seccion} i={i} campo="estBultos" type="number" delay={3000} disabled={soloLectura || !puedeEstimar} /></div>
         <div><Campo seccion={seccion} i={i} campo="bultos" type="number" delay={3000} disabled={soloLectura} /></div>
         <div><Campo seccion={seccion} i={i} campo="palletDesarmar" type="number" delay={3000} disabled={soloLectura} /></div>
         <div><Campo seccion={seccion} i={i} campo="comChofer" delay={5000} disabled={soloLectura && !esChofer} placeholder="..." /></div>
@@ -588,8 +605,8 @@ export default function Planilla() {
 
   function HeaderLevante() {
     return (
-      <div style={{ display:'grid', gridTemplateColumns:'1.3fr 70px 90px 1fr 1fr 44px', gap:'6px', marginBottom:'4px' }}>
-        {['Cliente','Bultos','Pallets a desarmar','Com. chofer','Com. oficina','✓'].map(h => <label key={h} style={LS}>{h}</label>)}
+      <div style={{ display:'grid', gridTemplateColumns:GRILLA_RETIROS, gap:'6px', marginBottom:'4px' }}>
+        {TITULOS_RETIROS.map(h => <label key={h} style={LS}>{h}</label>)}
       </div>
     )
   }
@@ -610,6 +627,12 @@ export default function Planilla() {
             </span>
           )}
         </div>
+
+        {textoEstimado(l) && (
+          <div style={{ marginBottom:'12px', padding:'8px 12px', background:'#ebf8ff', border:'1px solid #90cdf4', borderRadius:'8px', fontSize:'15px', color:'#2c5282' }}>
+            📦 <strong>Carga estimada:</strong> {textoEstimado(l)}
+          </div>
+        )}
 
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px', marginBottom:'10px' }}>
           <div>
@@ -826,12 +849,14 @@ export default function Planilla() {
       {esOficina && (
         <div style={{ background:'white', borderRadius:'12px', padding:'20px', marginBottom:'20px', boxShadow:'0 1px 4px rgba(0,0,0,0.06)', overflowX:'auto' }}>
           <h3 style={{ margin:'0 0 16px', color:'#1a1a2e' }}>Clientes puntuales</h3>
-          <div style={{ display:'grid', gridTemplateColumns:'1.3fr 70px 90px 1fr 1fr 44px', gap:'6px', marginBottom:'4px' }}>
-            {['Cliente','Bultos','Pallets a desarmar','Com. chofer','Com. oficina','✓'].map(h=><label key={h} style={LS}>{h}</label>)}
+          <div style={{ display:'grid', gridTemplateColumns:GRILLA_RETIROS, gap:'6px', marginBottom:'4px' }}>
+            {TITULOS_RETIROS.map(h=><label key={h} style={LS}>{h}</label>)}
           </div>
           {clientesPuntuales.map((l,i) => (
-            <div key={i} style={{ display:'grid', gridTemplateColumns:'1.3fr 70px 90px 1fr 1fr 44px', gap:'6px', marginBottom:'8px', alignItems:'end', background: snapshot.clientesPuntuales[i]?.controlOk ? '#e6ffed' : 'transparent', borderRadius:'8px', padding:'4px', boxSizing:'border-box' }}>
+            <div key={i} style={{ display:'grid', gridTemplateColumns:GRILLA_RETIROS, gap:'6px', marginBottom:'8px', alignItems:'end', background: snapshot.clientesPuntuales[i]?.controlOk ? '#e6ffed' : 'transparent', borderRadius:'8px', padding:'4px', boxSizing:'border-box' }}>
               <Campo seccion="clientesPuntuales" i={i} campo="cliente" delay={5000} placeholder="Nombre cliente" />
+              <Campo seccion="clientesPuntuales" i={i} campo="estPallets" type="number" delay={3000} disabled={!puedeEstimar} />
+              <Campo seccion="clientesPuntuales" i={i} campo="estBultos" type="number" delay={3000} disabled={!puedeEstimar} />
               <Campo seccion="clientesPuntuales" i={i} campo="bultos" type="number" delay={3000} />
               <Campo seccion="clientesPuntuales" i={i} campo="palletDesarmar" type="number" delay={3000} />
               <Campo seccion="clientesPuntuales" i={i} campo="comChofer" delay={5000} placeholder="..." />

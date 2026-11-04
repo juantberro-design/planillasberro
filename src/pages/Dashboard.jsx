@@ -129,7 +129,7 @@ export default function Dashboard() {
   const [avisoPuntual, setAvisoPuntual] = useState('')
 
   const esChofer = usuario.rol === 'chofer'
-  const esOficina = usuario.rol === 'admin' || usuario.rol === 'operador'
+  const esOficina = ['admin', 'operador', 'coordinador'].includes(usuario.rol)
 
   // Lista de choferes en tiempo real: así, si un operador agrega un chofer
   // puntual, a los demás operadores les aparece sin recargar la página.

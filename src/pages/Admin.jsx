@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react'
 import { collection, getDocs, doc, setDoc, updateDoc, deleteDoc, getDoc, query, orderBy, increment } from 'firebase/firestore'
 import { db } from '../firebase'
 import { hoyLocal } from '../utils/fechas'
+import { useAuth } from '../hooks/useAuth.jsx'
 
-const ROLES = ['admin', 'operador', 'chofer', 'supervisor']
+const ROLES = ['admin', 'operador', 'coordinador', 'chofer', 'supervisor']
 
 const inputStyle = {
   width: '100%',
@@ -55,6 +56,10 @@ export default function Admin() {
   const [histRegistros, setHistRegistros] = useState([])
   const [histCargando, setHistCargando] = useState(false)
   const [histEntradaSeleccionada, setHistEntradaSeleccionada] = useState(null)
+
+  // Cambio de rol de un usuario existente
+  const { usuario: yo } = useAuth()
+  const [cambiandoRol, setCambiandoRol] = useState(null) // { uid, nombre, rol, choferId }
 
   useEffect(() => { cargarDatos() }, [])
   useEffect(() => { if (tab === 'pallets' && clientesPallets.length > 0) cargarSaldosPallets() }, [tab, clientesPallets])
@@ -157,6 +162,26 @@ export default function Admin() {
     cargarDatos()
   }
 
+  async function guardarCambioRol() {
+    const c = cambiandoRol
+    if (c.rol === 'chofer' && !c.choferId) {
+      setError('Elegí a qué chofer corresponde este usuario.')
+      return
+    }
+    setError('')
+    try {
+      await updateDoc(doc(db, 'usuarios', c.uid), {
+        rol: c.rol,
+        choferId: c.rol === 'chofer' ? c.choferId : ''
+      })
+      setExito(`Listo: ${c.nombre} ahora es ${c.rol}. Lo va a ver la próxima vez que abra o recargue la app.`)
+      setCambiandoRol(null)
+      cargarDatos()
+    } catch (e) {
+      setError('No se pudo cambiar el rol. Revisá la conexión a internet.')
+    }
+  }
+
   async function guardarChofer() {
     setGuardando(true)
     if (editandoChofer) {
@@ -230,7 +255,7 @@ export default function Admin() {
     await setDoc(doc(db, 'config', 'pallets'), { clientes: nuevos })
   }
 
-  const rolColor = { admin: '#e53e3e', operador: '#3182ce', chofer: '#38a169', supervisor: '#805ad5' }
+  const rolColor = { admin: '#e53e3e', operador: '#3182ce', coordinador: '#dd6b20', chofer: '#38a169', supervisor: '#805ad5' }
 
   async function buscarHistorial() {
     if (!histChoferId) return
@@ -320,7 +345,43 @@ export default function Admin() {
                         <div style={{ fontSize: '12px', color: '#aaa' }}>{u.email}</div>
                       </td>
                       <td style={{ padding: '14px 16px', borderBottom: '1px solid #f0f0f0' }}>
-                        <span style={{ background: rolColor[u.rol] + '20', color: rolColor[u.rol], padding: '3px 10px', borderRadius: '20px', fontSize: '13px', fontWeight: '600' }}>{u.rol}</span>
+                        {cambiandoRol?.uid === u.uid ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: '170px' }}>
+                            <select style={inputStyle} value={cambiandoRol.rol}
+                              onChange={e => setCambiandoRol({ ...cambiandoRol, rol: e.target.value })}>
+                              {ROLES.map(r => <option key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</option>)}
+                            </select>
+                            {cambiandoRol.rol === 'chofer' && (
+                              <select style={inputStyle} value={cambiandoRol.choferId}
+                                onChange={e => setCambiandoRol({ ...cambiandoRol, choferId: e.target.value })}>
+                                <option value="">¿Qué chofer es?</option>
+                                {choferes.filter(c => !c.puntual).map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                              </select>
+                            )}
+                            <div style={{ display: 'flex', gap: '6px' }}>
+                              <button onClick={guardarCambioRol}
+                                style={{ flex: 1, padding: '6px 10px', background: '#1a1a2e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '13px', cursor: 'pointer', fontWeight: '600' }}>
+                                Guardar
+                              </button>
+                              <button onClick={() => { setCambiandoRol(null); setError('') }}
+                                style={{ flex: 1, padding: '6px 10px', background: 'white', color: '#666', border: '1px solid #ddd', borderRadius: '6px', fontSize: '13px', cursor: 'pointer' }}>
+                                Cancelar
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                            <span style={{ background: rolColor[u.rol] + '20', color: rolColor[u.rol], padding: '3px 10px', borderRadius: '20px', fontSize: '13px', fontWeight: '600' }}>{u.rol}</span>
+                            {u.uid !== yo?.uid ? (
+                              <button onClick={() => { setExito(''); setError(''); setCambiandoRol({ uid: u.uid, nombre: u.nombre, rol: u.rol, choferId: u.choferId || '' }) }}
+                                style={{ padding: '3px 10px', background: 'white', color: '#3182ce', border: '1px solid #3182ce', borderRadius: '6px', fontSize: '12px', cursor: 'pointer', fontWeight: '600' }}>
+                                Cambiar
+                              </button>
+                            ) : (
+                              <span style={{ fontSize: '12px', color: '#aaa' }}>(vos)</span>
+                            )}
+                          </div>
+                        )}
                       </td>
                       <td style={{ padding: '14px 16px', borderBottom: '1px solid #f0f0f0' }}>
                         <span style={{ color: u.activo ? '#38a169' : '#e53e3e', fontWeight: '600', fontSize: '13px' }}>{u.activo ? 'Activo' : 'Inactivo'}</span>

@@ -40,37 +40,37 @@ export default function App() {
         }>
           <Route index element={<Inicio />} />
           <Route path="planilla/:fecha/:choferId" element={
-            <PrivateRoute roles={['admin','operador','chofer']}>
+            <PrivateRoute roles={['admin','operador','coordinador','chofer']}>
               <Planilla />
             </PrivateRoute>
           } />
           <Route path="seguimiento" element={
-            <PrivateRoute roles={['supervisor','admin','operador']}>
+            <PrivateRoute roles={['supervisor','admin','operador','coordinador']}>
               <Seguimiento />
             </PrivateRoute>
           } />
           <Route path="pallets" element={
-            <PrivateRoute roles={['admin','operador']}>
+            <PrivateRoute roles={['admin','operador','coordinador']}>
               <Pallets />
             </PrivateRoute>
           } />
           <Route path="informes" element={
-            <PrivateRoute roles={['admin','operador']}>
+            <PrivateRoute roles={['admin','operador','coordinador']}>
               <Informes />
             </PrivateRoute>
           } />
           <Route path="imprimir/:fecha" element={
-            <PrivateRoute roles={['admin','operador']}>
+            <PrivateRoute roles={['admin','operador','coordinador']}>
               <ImprimirPlanillas />
             </PrivateRoute>
           } />
           <Route path="retiros" element={
-            <PrivateRoute roles={['admin','operador']}>
+            <PrivateRoute roles={['admin','operador','coordinador']}>
               <RetirosTurno />
             </PrivateRoute>
           } />
           <Route path="retiros-precargados" element={
-            <PrivateRoute roles={['admin','operador']}>
+            <PrivateRoute roles={['admin','operador','coordinador']}>
               <RetirosPrecargados />
             </PrivateRoute>
           } />

@@ -227,12 +227,13 @@ export default function ImprimirPlanillas() {
               <div style={{ fontWeight: '700', fontSize: '12px', marginBottom: '4px', textTransform: 'uppercase', color: '#444' }}>Levantes</div>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead><tr>
-                  {['Cliente','Bultos','Pallets','Com. chofer','Com. oficina'].map(h => <th key={h} style={thS}>{h}</th>)}
+                  {['Cliente','Estimado','Bultos','Pallets','Com. chofer','Com. oficina'].map(h => <th key={h} style={thS}>{h}</th>)}
                 </tr></thead>
                 <tbody>
                   {hoja.data.levantes.filter(l => l.cliente).map((l, i) => (
                     <tr key={i}>
                       <td style={tdS}>{l.cliente}</td>
+                      <td style={tdS}>{[l.estPallets && `${l.estPallets} pal.`, l.estBultos && `${l.estBultos} bul.`].filter(Boolean).join(' · ')}</td>
                       <td style={tdS}>{l.bultos}</td>
                       <td style={tdS}>{l.palletDesarmar}</td>
                       <td style={tdS}>{l.comChofer}</td>
@@ -250,12 +251,13 @@ export default function ImprimirPlanillas() {
               <div style={{ fontWeight: '700', fontSize: '12px', marginBottom: '4px', textTransform: 'uppercase', color: '#444' }}>Clientes puntuales</div>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead><tr>
-                  {['Cliente','Bultos','Pallets','Com. chofer','Com. oficina'].map(h => <th key={h} style={thS}>{h}</th>)}
+                  {['Cliente','Estimado','Bultos','Pallets','Com. chofer','Com. oficina'].map(h => <th key={h} style={thS}>{h}</th>)}
                 </tr></thead>
                 <tbody>
                   {hoja.data.clientesPuntuales.filter(l => l.cliente).map((l, i) => (
                     <tr key={i}>
                       <td style={tdS}>{l.cliente}</td>
+                      <td style={tdS}>{[l.estPallets && `${l.estPallets} pal.`, l.estBultos && `${l.estBultos} bul.`].filter(Boolean).join(' · ')}</td>
                       <td style={tdS}>{l.bultos}</td>
                       <td style={tdS}>{l.palletDesarmar}</td>
                       <td style={tdS}>{l.comChofer}</td>

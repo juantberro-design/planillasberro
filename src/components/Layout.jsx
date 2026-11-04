@@ -16,11 +16,11 @@ export default function Layout() {
   }
 
   const navItems = [
-    { path: '/', label: '🚚 Planillas', roles: ['admin', 'operador', 'chofer'] },
-    { path: '/seguimiento', label: '👀 Seguimiento', roles: ['supervisor', 'admin', 'operador'] },
-    { path: '/pallets', label: '📦 Pallets a desarmar', roles: ['admin', 'operador'] },
-    { path: '/retiros-precargados', label: '📋 Retiros precargados', roles: ['admin', 'operador'] },
-    { path: '/informes', label: '📊 Informes', roles: ['admin', 'operador'] },
+    { path: '/', label: '🚚 Planillas', roles: ['admin', 'operador', 'coordinador', 'chofer'] },
+    { path: '/seguimiento', label: '👀 Seguimiento', roles: ['supervisor', 'admin', 'operador', 'coordinador'] },
+    { path: '/pallets', label: '📦 Pallets a desarmar', roles: ['admin', 'operador', 'coordinador'] },
+    { path: '/retiros-precargados', label: '📋 Retiros precargados', roles: ['admin', 'operador', 'coordinador'] },
+    { path: '/informes', label: '📊 Informes', roles: ['admin', 'operador', 'coordinador'] },
     { path: '/admin', label: '⚙️ Admin', roles: ['admin'] },
     { path: '/configuracion', label: '🔧 Configuración' },
   ].filter(item => !item.roles || item.roles.includes(usuario?.rol))

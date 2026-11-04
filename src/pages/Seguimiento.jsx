@@ -188,6 +188,12 @@ export default function Seguimiento() {
                     colorEstado={hecho ? '#38a169' : '#888'}
                   />
                   {ret.puntual && <Dato>Cliente puntual</Dato>}
+                  {(tieneValor(ret.estPallets) || tieneValor(ret.estBultos)) && (
+                    <Dato color="#2c5282"><b>Carga estimada:</b> {[
+                      tieneValor(ret.estPallets) && `${ret.estPallets} pallets`,
+                      tieneValor(ret.estBultos) && `${ret.estBultos} bultos`
+                    ].filter(Boolean).join(' · ')}</Dato>
+                  )}
                   {hecho && <Dato><b>Bultos:</b> {ret.bultos}</Dato>}
                   {tieneValor(ret.palletDesarmar) && <Dato><b>Pallets a desarmar:</b> {ret.palletDesarmar}</Dato>}
                   {tieneValor(ret.comChofer) && <Dato><b>Comentario chofer:</b> {ret.comChofer}</Dato>}

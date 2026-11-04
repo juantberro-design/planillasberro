@@ -99,6 +99,83 @@ const IS = { width:'100%', padding:'10px', border:'1px solid #ddd', borderRadius
 const ISD = { ...IS, background:'#f5f5f5', color:'#888', cursor:'not-allowed' }
 const LS = { fontSize:'12px', color:'#666', marginBottom:'4px', display:'block' }
 
+// ── Estado del guardado ──
+// Vive FUERA de React a propósito: si fuera un useState de la planilla, cada
+// cambio re-dibujaría toda la planilla y el campo donde se está escribiendo
+// perdería el foco. Así, solo se re-dibuja la barra de abajo.
+//   'ok'         -> todo guardado (confirmado por Firebase)
+//   'pendiente'  -> hay cambios esperando para guardarse
+//   'guardando'  -> se están mandando a Firebase
+//   'error'      -> falló el guardado
+function crearEstadoGuardado() {
+  let valor = { estado: 'ok', hora: null }
+  const oyentes = new Set()
+  return {
+    get: () => valor,
+    set: (nuevo) => {
+      const siguiente = { ...valor, ...nuevo }
+      if (siguiente.estado === valor.estado && siguiente.hora === valor.hora) return
+      valor = siguiente
+      oyentes.forEach(f => f(valor))
+    },
+    suscribir: (f) => { oyentes.add(f); return () => { oyentes.delete(f) } }
+  }
+}
+
+function horaActual() {
+  const d = new Date()
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+// Barra fija abajo de la pantalla: muestra si está todo guardado y,
+// para la oficina, el botón para guardar en el momento.
+function BarraGuardado({ store, mostrarBoton, onGuardar }) {
+  const [valor, setValor] = useState(store.get())
+  const [lento, setLento] = useState(false)
+
+  useEffect(() => store.suscribir(setValor), [store])
+
+  // Si tarda más de 8 segundos, casi seguro es falta de internet
+  useEffect(() => {
+    setLento(false)
+    if (valor.estado !== 'guardando') return
+    const t = setTimeout(() => setLento(true), 8000)
+    return () => clearTimeout(t)
+  }, [valor.estado])
+
+  const textos = {
+    ok:        { texto: valor.hora ? `✅ Todo guardado · ${valor.hora}` : '✅ Todo guardado', color: '#2f855a' },
+    pendiente: { texto: '🟠 Cambios sin guardar', color: '#c05621' },
+    guardando: { texto: lento ? '⏳ Esperando conexión... no cierres la planilla' : '⏳ Guardando...', color: '#555' },
+    error:     { texto: '🔴 No se pudo guardar. Revisá internet y tocá Guardar.', color: '#c53030' }
+  }
+  const { texto, color } = textos[valor.estado] || textos.ok
+  const ocupado = valor.estado === 'guardando'
+
+  return (
+    <div className="berro-header-no-print" style={{
+      position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 50,
+      background: valor.estado === 'error' ? '#fff5f5' : 'white',
+      borderTop: `2px solid ${valor.estado === 'error' ? '#feb2b2' : '#e2e8f0'}`,
+      boxShadow: '0 -2px 8px rgba(0,0,0,0.08)'
+    }}>
+      <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', boxSizing: 'border-box' }}>
+        <span style={{ fontSize: '15px', fontWeight: '600', color }}>{texto}</span>
+        {mostrarBoton && (
+          <button onClick={onGuardar} disabled={ocupado}
+            style={{
+              padding: '12px 22px', fontSize: '16px', fontWeight: '700', borderRadius: '10px', border: 'none',
+              background: ocupado ? '#a0aec0' : '#1a1a2e', color: 'white',
+              cursor: ocupado ? 'default' : 'pointer', whiteSpace: 'nowrap', flexShrink: 0
+            }}>
+            💾 Guardar
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function Planilla() {
   const { fecha, choferId } = useParams()
   const [searchParams] = useSearchParams()
@@ -117,8 +194,6 @@ export default function Planilla() {
     turnoActual()
   )
   const [cargando, setCargando] = useState(true)
-  const [guardando, setGuardando] = useState(false)
-  const [guardado, setGuardado] = useState(false)
   const [okStates, setOkStates] = useState([false])
   const [remitoOkStates, setRemitoOkStates] = useState([false])
   const [avisoPlantilla, setAvisoPlantilla] = useState('') // mensaje de éxito/error al cargar plantilla
@@ -140,6 +215,8 @@ export default function Planilla() {
   const listo = useRef(false)
   const guardandoRef = useRef(false)      // true mientras hay un guardado corriendo
   const guardarPendiente = useRef(false)  // true si llegó otro pedido de guardar mientras tanto
+  const estadoGuardado = useRef(null)     // estado de la barra de guardado (ver crearEstadoGuardado)
+  if (!estadoGuardado.current) estadoGuardado.current = crearEstadoGuardado()
   // Ids de filas de "entregas" agregadas en este dispositivo que todavía no
   // se vieron confirmadas en un snapshot de Firestore. Mientras un id esté
   // acá, aplicarDatos() la va a mantener en pantalla aunque el snapshot que
@@ -173,6 +250,7 @@ export default function Planilla() {
   useEffect(() => {
     listo.current = false
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null }
+    estadoGuardado.current.set({ estado: 'ok', hora: null })
     setCargando(true)
     const ref = doc(db, 'planillas', fecha, 'choferes', `${choferId}_${turno}`)
     let primerSnapshot = true
@@ -192,7 +270,17 @@ export default function Planilla() {
       setCargando(false)
     })
 
-    return () => unsub()
+    return () => {
+      unsub()
+      // Si se sale de esta planilla (menú, botón atrás del celular, etc.) con
+      // un cambio esperando para guardarse, se guarda en ese momento en vez
+      // de perderlo. Este "guardar" es el de ESTA planilla (misma fecha/turno).
+      if (timerRef.current) {
+        clearTimeout(timerRef.current)
+        timerRef.current = null
+        guardar()
+      }
+    }
   }, [fecha, choferId, turno])
 
   async function cargarChoferYClientes() {
@@ -278,8 +366,9 @@ export default function Planilla() {
     }
 
     guardandoRef.current = true
-    setGuardando(true)
+    estadoGuardado.current.set({ estado: 'guardando' })
 
+    try {
     do {
       guardarPendiente.current = false
 
@@ -317,11 +406,64 @@ export default function Planilla() {
       // pierde una fila o un cambio por culpa de un guardado atrasado.
     } while (guardarPendiente.current)
 
-    guardandoRef.current = false
-    setGuardando(false)
-    setGuardado(true)
-    setTimeout(() => setGuardado(false), 2000)
+      guardandoRef.current = false
+      // "Todo guardado" solo cuando Firebase confirmó. Si mientras tanto se
+      // escribió algo más, queda como pendiente (se guarda solo en unos segundos).
+      estadoGuardado.current.set(timerRef.current ? { estado: 'pendiente' } : { estado: 'ok', hora: horaActual() })
+    } catch (e) {
+      console.error('Error al guardar la planilla:', e)
+      guardandoRef.current = false
+      guardarPendiente.current = false
+      estadoGuardado.current.set({ estado: 'error' })
+    }
   }, [fecha, choferId, turno, soloLectura])
+
+  // Siempre apunta a la versión actual de guardar (para usarla desde eventos del navegador)
+  const guardarRef = useRef(guardar)
+  guardarRef.current = guardar
+
+  // Guarda YA lo que haya (botón "Guardar") y espera a que Firebase confirme.
+  // Devuelve true si quedó todo guardado, false si falló.
+  async function guardarAhora() {
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null }
+    if (!listo.current || soloLectura) return true
+    await guardar()
+    // Si había otro guardado en camino, esperamos a que termine también
+    while (guardandoRef.current) await new Promise(r => setTimeout(r, 200))
+    return estadoGuardado.current.get().estado !== 'error'
+  }
+
+  // Antes de salir de la planilla (botón ← o cambio de turno):
+  // si hay algo sin guardar, primero se guarda y después se sale.
+  // Si el guardado falla, NO se sale, y queda el aviso rojo abajo.
+  async function salirSeguro(accion) {
+    if (timerRef.current || guardandoRef.current) {
+      const ok = await guardarAhora()
+      if (!ok) return
+    }
+    accion()
+  }
+
+  // Si se intenta cerrar la pestaña con cambios sin guardar, el navegador pregunta.
+  // En el celular, si se pasa a otra app (WhatsApp, etc.), se guarda en ese momento.
+  useEffect(() => {
+    function alCerrar(e) {
+      if (timerRef.current || guardandoRef.current) { e.preventDefault(); e.returnValue = '' }
+    }
+    function alOcultar() {
+      if (document.visibilityState === 'hidden' && timerRef.current) {
+        clearTimeout(timerRef.current)
+        timerRef.current = null
+        guardarRef.current()
+      }
+    }
+    window.addEventListener('beforeunload', alCerrar)
+    document.addEventListener('visibilitychange', alOcultar)
+    return () => {
+      window.removeEventListener('beforeunload', alCerrar)
+      document.removeEventListener('visibilitychange', alOcultar)
+    }
+  }, [])
 
   function programar(delay) {
     if (!listo.current || soloLectura) return
@@ -331,6 +473,7 @@ export default function Planilla() {
       guardar()
     } else {
       timerRef.current = setTimeout(() => { timerRef.current = null; guardar() }, delay)
+      if (!guardandoRef.current) estadoGuardado.current.set({ estado: 'pendiente' })
     }
   }
 
@@ -494,10 +637,10 @@ export default function Planilla() {
   }
 
   return (
-    <div style={{ padding:'clamp(12px,4vw,24px)', maxWidth:'1100px', margin:'0 auto' }}>
+    <div style={{ padding:'clamp(12px,4vw,24px)', paddingBottom: soloLectura ? undefined : '90px', maxWidth:'1100px', margin:'0 auto' }}>
       {/* Header */}
       <div style={{ display:'flex', alignItems:'center', gap:'10px', marginBottom:'20px', flexWrap:'wrap' }}>
-        <button onClick={() => navigate('/')} style={{ background:'none', border:'none', cursor:'pointer', fontSize:'20px', padding:'4px' }}>←</button>
+        <button onClick={() => salirSeguro(() => navigate('/'))} style={{ background:'none', border:'none', cursor:'pointer', fontSize:'20px', padding:'4px' }}>←</button>
         <div>
           <h2 style={{ margin:0, color:'#1a1a2e', fontSize:'clamp(17px,4.5vw,22px)' }}>{nombreChofer}</h2>
           <div style={{ fontSize:'13px', color:'#888' }}>{fecha}</div>
@@ -508,11 +651,9 @@ export default function Planilla() {
           </span>
         )}
         <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:'10px', flexWrap:'wrap' }}>
-          {guardando && <span style={{ color:'#888', fontSize:'12px' }}>Guardando...</span>}
-          {guardado && !guardando && <span style={{ color:'green', fontSize:'12px' }}>✓ Guardado</span>}
           <div style={{ display:'flex', gap:'6px' }}>
             {['mañana','tarde'].map(t => (
-              <button key={t} onClick={() => setTurno(t)}
+              <button key={t} onClick={() => { if (t !== turno) salirSeguro(() => setTurno(t)) }}
                 style={{ padding:'10px 16px', borderRadius:'8px', border:'none', cursor:'pointer', fontWeight:'600', fontSize:'14px', background:turno===t?'#1a1a2e':'#e2e8f0', color:turno===t?'white':'#444' }}>
                 {t.charAt(0).toUpperCase()+t.slice(1)}
               </button>
@@ -744,6 +885,10 @@ export default function Planilla() {
           </div>
         ))}
       </div>
+
+      {!soloLectura && (
+        <BarraGuardado store={estadoGuardado.current} mostrarBoton={esOficina} onGuardar={guardarAhora} />
+      )}
 
       <style>{`
         .berro-tarjetas-chofer { display: none; }

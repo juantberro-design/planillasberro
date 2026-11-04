@@ -17,7 +17,7 @@ export default function Layout() {
 
   const navItems = [
     { path: '/', label: '🚚 Planillas', roles: ['admin', 'operador', 'chofer'] },
-    { path: '/seguimiento', label: '👀 Seguimiento', roles: ['supervisor'] },
+    { path: '/seguimiento', label: '👀 Seguimiento', roles: ['supervisor', 'admin', 'operador'] },
     { path: '/pallets', label: '📦 Pallets a desarmar', roles: ['admin', 'operador'] },
     { path: '/retiros-precargados', label: '📋 Retiros precargados', roles: ['admin', 'operador'] },
     { path: '/informes', label: '📊 Informes', roles: ['admin', 'operador'] },

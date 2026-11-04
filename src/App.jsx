@@ -45,7 +45,7 @@ export default function App() {
             </PrivateRoute>
           } />
           <Route path="seguimiento" element={
-            <PrivateRoute roles={['supervisor','admin']}>
+            <PrivateRoute roles={['supervisor','admin','operador']}>
               <Seguimiento />
             </PrivateRoute>
           } />

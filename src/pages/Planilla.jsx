@@ -98,6 +98,9 @@ const puntualVacio = () => ({ cliente:'', estPallets:'', estBultos:'', bultos:''
 // Columnas de la tabla de retiros: Cliente | Est. pallets | Est. bultos | Bultos | Pallets a desarmar | Com. chofer | Com. oficina | ✓
 const GRILLA_RETIROS = '1.3fr 64px 64px 70px 90px 1fr 1fr 44px'
 const TITULOS_RETIROS = ['Cliente','Est. pallets','Est. bultos','Bultos','Pallets a desarmar','Com. chofer','Com. oficina','✓']
+// Misma tabla pero SIN las dos columnas de estimado (para los operadores)
+const GRILLA_RETIROS_SIN_EST = '1.3fr 70px 90px 1fr 1fr 44px'
+const TITULOS_RETIROS_SIN_EST = ['Cliente','Bultos','Pallets a desarmar','Com. chofer','Com. oficina','✓']
 
 // "2 pallets · 15 bultos" (o vacío si no hay estimado)
 function textoEstimado(l) {
@@ -199,6 +202,10 @@ export default function Planilla() {
   const esOficina = ['admin', 'operador', 'coordinador'].includes(usuario.rol)
   // Solo el coordinador y el admin pueden escribir la carga estimada
   const puedeEstimar = ['admin', 'coordinador'].includes(usuario.rol)
+  // Los operadores NO ven la carga estimada (los confunde). La ven admin, coordinador y el chofer.
+  const verEstimado = usuario.rol !== 'operador'
+  const grillaRetiros = verEstimado ? GRILLA_RETIROS : GRILLA_RETIROS_SIN_EST
+  const titulosRetiros = verEstimado ? TITULOS_RETIROS : TITULOS_RETIROS_SIN_EST
   const soloLectura = esChofer && fecha < hoy()
 
   const [nombreChofer, setNombreChofer] = useState('')
@@ -565,7 +572,7 @@ export default function Planilla() {
   function FilaLevante({ l, i, seccion, clienteEditable, oficina }) {
     const controlOk = snapshot[seccion][i]?.controlOk || false
     return (
-      <div style={{ display:'grid', gridTemplateColumns:GRILLA_RETIROS, gap:'6px', marginBottom:'8px', alignItems:'end', background: controlOk ? '#e6ffed' : 'transparent', borderRadius:'8px', padding:'4px', boxSizing:'border-box' }}>
+      <div style={{ display:'grid', gridTemplateColumns:grillaRetiros, gap:'6px', marginBottom:'8px', alignItems:'end', background: controlOk ? '#e6ffed' : 'transparent', borderRadius:'8px', padding:'4px', boxSizing:'border-box' }}>
         <div>
           {clienteEditable ? (
             <SelectorCliente
@@ -579,8 +586,8 @@ export default function Planilla() {
             <div style={{...ISD, display:'flex', alignItems:'center'}}>{l.cliente}</div>
           )}
         </div>
-        <div><Campo seccion={seccion} i={i} campo="estPallets" type="number" delay={3000} disabled={soloLectura || !puedeEstimar} /></div>
-        <div><Campo seccion={seccion} i={i} campo="estBultos" type="number" delay={3000} disabled={soloLectura || !puedeEstimar} /></div>
+        {verEstimado && <div><Campo seccion={seccion} i={i} campo="estPallets" type="number" delay={3000} disabled={soloLectura || !puedeEstimar} /></div>}
+        {verEstimado && <div><Campo seccion={seccion} i={i} campo="estBultos" type="number" delay={3000} disabled={soloLectura || !puedeEstimar} /></div>}
         <div><Campo seccion={seccion} i={i} campo="bultos" type="number" delay={3000} disabled={soloLectura} /></div>
         <div><Campo seccion={seccion} i={i} campo="palletDesarmar" type="number" delay={3000} disabled={soloLectura} /></div>
         <div><Campo seccion={seccion} i={i} campo="comChofer" delay={5000} disabled={soloLectura && !esChofer} placeholder="..." /></div>
@@ -605,8 +612,8 @@ export default function Planilla() {
 
   function HeaderLevante() {
     return (
-      <div style={{ display:'grid', gridTemplateColumns:GRILLA_RETIROS, gap:'6px', marginBottom:'4px' }}>
-        {TITULOS_RETIROS.map(h => <label key={h} style={LS}>{h}</label>)}
+      <div style={{ display:'grid', gridTemplateColumns:grillaRetiros, gap:'6px', marginBottom:'4px' }}>
+        {titulosRetiros.map(h => <label key={h} style={LS}>{h}</label>)}
       </div>
     )
   }
@@ -849,14 +856,14 @@ export default function Planilla() {
       {esOficina && (
         <div style={{ background:'white', borderRadius:'12px', padding:'20px', marginBottom:'20px', boxShadow:'0 1px 4px rgba(0,0,0,0.06)', overflowX:'auto' }}>
           <h3 style={{ margin:'0 0 16px', color:'#1a1a2e' }}>Clientes puntuales</h3>
-          <div style={{ display:'grid', gridTemplateColumns:GRILLA_RETIROS, gap:'6px', marginBottom:'4px' }}>
-            {TITULOS_RETIROS.map(h=><label key={h} style={LS}>{h}</label>)}
+          <div style={{ display:'grid', gridTemplateColumns:grillaRetiros, gap:'6px', marginBottom:'4px' }}>
+            {titulosRetiros.map(h=><label key={h} style={LS}>{h}</label>)}
           </div>
           {clientesPuntuales.map((l,i) => (
-            <div key={i} style={{ display:'grid', gridTemplateColumns:GRILLA_RETIROS, gap:'6px', marginBottom:'8px', alignItems:'end', background: snapshot.clientesPuntuales[i]?.controlOk ? '#e6ffed' : 'transparent', borderRadius:'8px', padding:'4px', boxSizing:'border-box' }}>
+            <div key={i} style={{ display:'grid', gridTemplateColumns:grillaRetiros, gap:'6px', marginBottom:'8px', alignItems:'end', background: snapshot.clientesPuntuales[i]?.controlOk ? '#e6ffed' : 'transparent', borderRadius:'8px', padding:'4px', boxSizing:'border-box' }}>
               <Campo seccion="clientesPuntuales" i={i} campo="cliente" delay={5000} placeholder="Nombre cliente" />
-              <Campo seccion="clientesPuntuales" i={i} campo="estPallets" type="number" delay={3000} disabled={!puedeEstimar} />
-              <Campo seccion="clientesPuntuales" i={i} campo="estBultos" type="number" delay={3000} disabled={!puedeEstimar} />
+              {verEstimado && <Campo seccion="clientesPuntuales" i={i} campo="estPallets" type="number" delay={3000} disabled={!puedeEstimar} />}
+              {verEstimado && <Campo seccion="clientesPuntuales" i={i} campo="estBultos" type="number" delay={3000} disabled={!puedeEstimar} />}
               <Campo seccion="clientesPuntuales" i={i} campo="bultos" type="number" delay={3000} />
               <Campo seccion="clientesPuntuales" i={i} campo="palletDesarmar" type="number" delay={3000} />
               <Campo seccion="clientesPuntuales" i={i} campo="comChofer" delay={5000} placeholder="..." />

@@ -14,9 +14,15 @@ function turnoActual() {
   return new Date().getHours() < 12 ? 'mañana' : 'tarde'
 }
 
-// Un levante/cliente puntual cuenta como "completo" cuando la oficina le marcó el tilde azul de control.
+// Un levante/cliente puntual cuenta como "hecho" (para el número de la tarjeta) cuando el chofer cargó los bultos.
+function levanteHecho(l) {
+  return !!(l.cliente && l.bultos !== undefined && l.bultos !== null && String(l.bultos).trim() !== '')
+}
+
+// Un levante/cliente puntual está "confirmado" cuando la oficina le marcó el tilde azul de control.
+// El color de la tarjeta (amarillo/verde) depende SOLO de esto.
 // (Ya no se usan los horarios de llegada/salida: esa información ahora viene del GPS.)
-function levanteCompleto(l) {
+function levanteConfirmado(l) {
   return !!(l.cliente && l.controlOk)
 }
 
@@ -31,8 +37,16 @@ function calcularProgreso(data) {
   const entregasConDatos = (data?.entregas || []).filter(e => e.remitente || e.destinatario)
 
   return {
-    levantes: { hechos: levantesConCliente.filter(levanteCompleto).length, total: levantesConCliente.length },
-    puntuales: { hechos: puntualesConCliente.filter(levanteCompleto).length, total: puntualesConCliente.length },
+    levantes: {
+      hechos: levantesConCliente.filter(levanteHecho).length,
+      confirmados: levantesConCliente.filter(levanteConfirmado).length,
+      total: levantesConCliente.length
+    },
+    puntuales: {
+      hechos: puntualesConCliente.filter(levanteHecho).length,
+      confirmados: puntualesConCliente.filter(levanteConfirmado).length,
+      total: puntualesConCliente.length
+    },
     entregas: { hechos: entregasConDatos.filter(entregaCompleta).length, total: entregasConDatos.length }
   }
 }
@@ -59,8 +73,11 @@ function planillaVacia(data) {
   return !(hayLevantes || hayPuntuales || hayEntregas || hayDevoluciones)
 }
 
+// Para el color de la tarjeta: en levantes y puntuales cuenta el tilde de oficina (confirmados);
+// en entregas sigue contando el OK del remito.
 function parteLista(p) {
-  return p.hechos === p.total
+  const listos = p.confirmados !== undefined ? p.confirmados : p.hechos
+  return listos === p.total
 }
 
 // Color de la tarjeta del chofer:

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { collection, onSnapshot } from 'firebase/firestore'
 import { db } from '../firebase'
+import { useAuth } from '../hooks/useAuth.jsx'
 
 // ─────────────────────────────────────────────────────────────
 // Pantalla de SEGUIMIENTO (rol "supervisor").
@@ -84,6 +85,9 @@ const COLORES = {
 const RESUMEN_VACIO = { entregas: [], retiros: [], devoluciones: [], entregasHechas: 0, retirosHechos: 0 }
 
 export default function Seguimiento() {
+  const { usuario } = useAuth()
+  // Los operadores NO ven la carga estimada (los confunde). La ven admin, supervisor y coordinador.
+  const verEstimado = usuario?.rol !== 'operador'
   const [searchParams, setSearchParams] = useSearchParams()
   const fecha = searchParams.get('fecha') || fechaLocal()
   const turno = searchParams.get('turno') === 'tarde' ? 'tarde'
@@ -188,7 +192,7 @@ export default function Seguimiento() {
                     colorEstado={hecho ? '#38a169' : '#888'}
                   />
                   {ret.puntual && <Dato>Cliente puntual</Dato>}
-                  {(tieneValor(ret.estPallets) || tieneValor(ret.estBultos)) && (
+                  {verEstimado && (tieneValor(ret.estPallets) || tieneValor(ret.estBultos)) && (
                     <Dato color="#2c5282"><b>Carga estimada:</b> {[
                       tieneValor(ret.estPallets) && `${ret.estPallets} pallets`,
                       tieneValor(ret.estBultos) && `${ret.estBultos} bultos`

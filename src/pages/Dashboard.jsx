@@ -98,7 +98,8 @@ function estadoChofer(progreso) {
 // ─── AUSENCIAS (faltas y licencias) ───
 // Cada ausencia se guarda en la colección "ausencias" con un rango de fechas:
 //   { choferId, choferNombre, tipo: 'falta' | 'licencia', desde: 'AAAA-MM-DD', hasta: 'AAAA-MM-DD',
-//     turno: 'ambos' | 'mañana' | 'tarde', nota }
+//     turno: 'ambos' | 'mañana' | 'tarde', reemplazoId, reemplazoNombre, nota }
+// reemplazoId: chofer que hace los retiros precargados del ausente en ese período (opcional).
 // Un chofer está ausente un día y turno si ese día cae entre "desde" y "hasta" (incluidos)
 // y la ausencia es de todo el día ("ambos") o de ese turno.
 // Las ausencias viejas, sin campo turno, cuentan como todo el día.
@@ -185,7 +186,7 @@ export default function Dashboard() {
   const [ausencias, setAusencias] = useState([])
   const [mostrarAusentes, setMostrarAusentes] = useState(false)
   const [mostrarVentanaAusencias, setMostrarVentanaAusencias] = useState(false)
-  const [formAusencia, setFormAusencia] = useState({ choferId: '', tipo: 'falta', desde: '', hasta: '', turno: 'ambos', nota: '' })
+  const [formAusencia, setFormAusencia] = useState({ choferId: '', tipo: 'falta', desde: '', hasta: '', turno: 'ambos', reemplazoId: '', nota: '' })
   const [guardandoAusencia, setGuardandoAusencia] = useState(false)
   const [avisoAusencia, setAvisoAusencia] = useState('')
 
@@ -283,17 +284,19 @@ export default function Dashboard() {
     .sort((a, b) => a.desde.localeCompare(b.desde))
 
   function abrirVentanaAusencias() {
-    setFormAusencia({ choferId: '', tipo: 'falta', desde: fecha, hasta: fecha, turno: 'ambos', nota: '' })
+    setFormAusencia({ choferId: '', tipo: 'falta', desde: fecha, hasta: fecha, turno: 'ambos', reemplazoId: '', nota: '' })
     setAvisoAusencia('')
     setMostrarVentanaAusencias(true)
   }
 
   async function guardarAusencia() {
-    const { choferId, tipo, desde, hasta, turno: turnoAusencia, nota } = formAusencia
+    const { choferId, tipo, desde, hasta, turno: turnoAusencia, reemplazoId, nota } = formAusencia
     if (!choferId) { setAvisoAusencia('Elegí el chofer.'); return }
     if (!desde || !hasta) { setAvisoAusencia('Completá las dos fechas.'); return }
     if (hasta < desde) { setAvisoAusencia('La fecha "hasta" no puede ser anterior a "desde".'); return }
+    if (reemplazoId && reemplazoId === choferId) { setAvisoAusencia('El reemplazo tiene que ser otro chofer.'); return }
     const chofer = todosChoferes.find(c => c.id === choferId)
+    const reemplazo = reemplazoId ? todosChoferes.find(c => c.id === reemplazoId) : null
     setGuardandoAusencia(true)
     setAvisoAusencia('')
     try {
@@ -304,12 +307,14 @@ export default function Dashboard() {
         desde,
         hasta,
         turno: turnoAusencia,
+        reemplazoId: reemplazoId || '',
+        reemplazoNombre: reemplazo?.nombre || '',
         nota: nota.trim(),
         creadoAt: Date.now(),
         creadoPor: usuario.nombre || usuario.email || ''
       })
       // Dejamos la ventana abierta y limpiamos el formulario, por si hay que marcar a otro
-      setFormAusencia({ choferId: '', tipo: 'falta', desde: fecha, hasta: fecha, turno: 'ambos', nota: '' })
+      setFormAusencia({ choferId: '', tipo: 'falta', desde: fecha, hasta: fecha, turno: 'ambos', reemplazoId: '', nota: '' })
     } catch {
       setAvisoAusencia('No se pudo guardar la ausencia. Revisá la conexión y probá de nuevo.')
     }
@@ -701,7 +706,12 @@ export default function Dashboard() {
             <label style={{ fontSize: '13px', color: '#666', marginBottom: '6px', display: 'block' }}>Chofer</label>
             <select
               value={formAusencia.choferId}
-              onChange={e => { setFormAusencia({ ...formAusencia, choferId: e.target.value }); setAvisoAusencia('') }}
+              onChange={e => {
+                const nuevoId = e.target.value
+                // Si el reemplazo elegido era el mismo chofer, se limpia
+                setFormAusencia({ ...formAusencia, choferId: nuevoId, reemplazoId: formAusencia.reemplazoId === nuevoId ? '' : formAusencia.reemplazoId })
+                setAvisoAusencia('')
+              }}
               style={{ width: '100%', padding: '11px 12px', border: '1px solid #ddd', borderRadius: '8px', fontSize: '16px', boxSizing: 'border-box', background: 'white' }}>
               <option value="">Elegí un chofer...</option>
               {fijos.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
@@ -752,6 +762,20 @@ export default function Dashboard() {
               </p>
             )}
 
+            <label style={{ fontSize: '13px', color: '#666', margin: '14px 0 6px', display: 'block' }}>Sus retiros precargados los hace</label>
+            <select
+              value={formAusencia.reemplazoId}
+              onChange={e => setFormAusencia({ ...formAusencia, reemplazoId: e.target.value })}
+              style={{ width: '100%', padding: '11px 12px', border: '1px solid #ddd', borderRadius: '8px', fontSize: '16px', boxSizing: 'border-box', background: 'white' }}>
+              <option value="">Nadie</option>
+              {fijos.filter(c => c.id !== formAusencia.choferId).map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+            </select>
+            {formAusencia.reemplazoId && (
+              <p style={{ margin: '6px 0 0', fontSize: '12px', color: '#666' }}>
+                En esos días, al apretar "Cargar planilla precargada" en la planilla del reemplazo, se suman estos clientes a los suyos.
+              </p>
+            )}
+
             <label style={{ fontSize: '13px', color: '#666', margin: '14px 0 6px', display: 'block' }}>Nota (opcional)</label>
             <input type="text" value={formAusencia.nota}
               onChange={e => setFormAusencia({ ...formAusencia, nota: e.target.value })}
@@ -784,6 +808,7 @@ export default function Dashboard() {
                         <div style={{ fontWeight: '600', color: '#1a1a2e', fontSize: '14px' }}>{a.choferNombre}</div>
                         <div style={{ fontSize: '12px', color: '#666' }}>
                           {NOMBRE_TIPO[a.tipo] || 'Ausencia'}{textoTurnoAusencia(a)} · {a.desde === a.hasta ? fechaCorta(a.desde) : `${fechaCorta(a.desde)} al ${fechaCorta(a.hasta)}`}
+                          {a.reemplazoNombre ? ` · retiros: ${a.reemplazoNombre}` : ''}
                           {a.nota ? ` · ${a.nota}` : ''}
                         </div>
                       </div>

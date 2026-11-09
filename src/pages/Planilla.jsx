@@ -511,10 +511,34 @@ export default function Planilla() {
     return datos.current.levantes.some(l => l.cliente && l.cliente.trim())
   }
 
-  // Lee la plantilla precargada de un chofer para este turno (lista de nombres de clientes)
+  // Día de la semana de esta planilla (0 = domingo, 1 = lunes ... 6 = sábado)
+  const NOMBRES_DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado']
+  function diaDeLaPlanilla() {
+    const [y, m, d] = fecha.split('-').map(Number)
+    return new Date(y, m - 1, d).getDay()
+  }
+
+  // Lee la plantilla precargada de un chofer para este turno.
+  // Devuelve { clientes, salteados }: solo los clientes que van el día de la semana de esta planilla,
+  // y cuántos se dejaron afuera porque no van ese día.
+  // Los clientes sin días guardados (plantillas viejas) van todos los días.
+  // Los domingos no se pueden marcar en la plantilla, así que ese día se carga todo.
   async function leerPlantilla(idChofer) {
     const snap = await getDoc(doc(db, 'retirosPrecargados', `${idChofer}_${turno}`))
-    return snap.exists() ? (snap.data().clientes || []).filter(c => c && c.trim()) : []
+    if (!snap.exists()) return { clientes: [], salteados: 0 }
+    const lista = snap.data().clientes || []
+    const listaDias = snap.data().dias || []
+    const dia = diaDeLaPlanilla()
+    const clientes = []
+    let salteados = 0
+    lista.forEach((c, i) => {
+      if (!c || !c.trim()) return
+      const diasCliente = listaDias[i]
+      const va = dia === 0 || !Array.isArray(diasCliente) || diasCliente.includes(dia)
+      if (va) clientes.push(c)
+      else salteados++
+    })
+    return { clientes, salteados }
   }
 
   // Botón "Cargar planilla precargada".
@@ -549,8 +573,13 @@ export default function Planilla() {
       const plantillasAusentes = await Promise.all(aCargo.map(async a => ({
         nombre: a.choferNombre || 'otro chofer',
         tipo: nombreTipo(a),
-        clientes: await leerPlantilla(a.choferId)
+        ...(await leerPlantilla(a.choferId))
       })))
+      // Texto para el aviso cuando hay clientes que no van este día de la semana
+      const textoDia = salteados => salteados > 0
+        ? ` (${NOMBRES_DIAS[diaDeLaPlanilla()]}: ${salteados} no van este día)`
+        : ''
+      const salteadosAusentes = plantillasAusentes.reduce((t, p) => t + p.salteados, 0)
       const textoAusentes = plantillasAusentes
         .filter(p => p.clientes.length)
         .map(p => `${p.nombre} (${p.tipo})`)
@@ -574,7 +603,9 @@ export default function Planilla() {
         if (aAgregar.length === 0) {
           setAvisoPlantilla(textoAusentes
             ? `Los clientes de ${textoAusentes} ya están todos en esta planilla.`
-            : 'Los choferes que cubre este chofer no tienen plantilla precargada para este turno.')
+            : salteadosAusentes > 0
+              ? `Los clientes de los choferes que cubre no van los ${NOMBRES_DIAS[diaDeLaPlanilla()]}.`
+              : 'Los choferes que cubre este chofer no tienen plantilla precargada para este turno.')
           setCargandoPlantilla(false)
           return
         }
@@ -589,14 +620,15 @@ export default function Planilla() {
         pendientes.forEach(cliente => levantes.push({ ...levanteVacio(), cliente }))
         setSnapshot(JSON.parse(JSON.stringify(datos.current)))
         programar(0)
-        setAvisoPlantilla(`Se cargaron ${aAgregar.length} cliente${aAgregar.length !== 1 ? 's' : ''} de ${textoAusentes}.`)
+        setAvisoPlantilla(`Se cargaron ${aAgregar.length} cliente${aAgregar.length !== 1 ? 's' : ''} de ${textoAusentes}${textoDia(salteadosAusentes)}.`)
         setTimeout(() => setAvisoPlantilla(''), 6000)
         setCargandoPlantilla(false)
         return
       }
 
       // Planilla vacía: lo propio + lo de los ausentes, sin repetir
-      const propios = await leerPlantilla(choferId)
+      const { clientes: propios, salteados: salteadosPropios } = await leerPlantilla(choferId)
+      const salteadosTotal = salteadosPropios + salteadosAusentes
       const vistos = new Set()
       const todos = []
       const agregar = c => { if (!vistos.has(clave(c))) { vistos.add(clave(c)); todos.push(c) } }
@@ -606,7 +638,9 @@ export default function Planilla() {
       const cantAusentes = todos.length - cantPropios
 
       if (todos.length === 0) {
-        setAvisoPlantilla('No hay una plantilla precargada guardada para este chofer y turno. Podés crearla desde Admin → Retiros precargados.')
+        setAvisoPlantilla(salteadosTotal > 0
+          ? `Ningún cliente de la plantilla va los ${NOMBRES_DIAS[diaDeLaPlanilla()]}. No se cargó nada.`
+          : 'No hay una plantilla precargada guardada para este chofer y turno. Podés crearla desde Admin → Retiros precargados.')
         setCargandoPlantilla(false)
         return
       }
@@ -619,8 +653,8 @@ export default function Planilla() {
       setSnapshot(JSON.parse(JSON.stringify(datos.current)))
       programar(0)
       setAvisoPlantilla(cantAusentes > 0
-        ? `Se cargaron ${cantPropios} cliente${cantPropios !== 1 ? 's' : ''} propio${cantPropios !== 1 ? 's' : ''} + ${cantAusentes} de ${textoAusentes}.`
-        : `Se cargaron ${cantPropios} cliente${cantPropios !== 1 ? 's' : ''} de la plantilla.`)
+        ? `Se cargaron ${cantPropios} cliente${cantPropios !== 1 ? 's' : ''} propio${cantPropios !== 1 ? 's' : ''} + ${cantAusentes} de ${textoAusentes}${textoDia(salteadosTotal)}.`
+        : `Se cargaron ${cantPropios} cliente${cantPropios !== 1 ? 's' : ''} de la plantilla${textoDia(salteadosTotal)}.`)
       setTimeout(() => setAvisoPlantilla(''), cantAusentes > 0 ? 6000 : 4000)
     } catch (e) {
       setAvisoPlantilla('Error al cargar la plantilla. Probá de nuevo.')

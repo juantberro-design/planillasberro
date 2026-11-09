@@ -4,6 +4,10 @@ import { doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore'
 import { db } from '../firebase'
 import SelectorCliente from '../components/SelectorCliente.jsx'
 
+// Días de la semana para los clientes de la plantilla (números como Date.getDay(): 1 = lunes ... 6 = sábado)
+const DIAS_SEMANA = [[1, 'L'], [2, 'M'], [3, 'X'], [4, 'J'], [5, 'V'], [6, 'S']]
+const TODOS_LOS_DIAS = DIAS_SEMANA.map(([n]) => n)
+
 const IS = { width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '8px', fontSize: '14px', boxSizing: 'border-box' }
 
 export default function RetirosPrecargados() {
@@ -13,6 +17,8 @@ export default function RetirosPrecargados() {
   const [choferId, setChoferId] = useState('')
   const [turno, setTurno] = useState('mañana')
   const [clientes, setClientes] = useState(Array(10).fill(''))
+  // Días de cada cliente, en el mismo orden que "clientes". Por defecto, todos los días.
+  const [dias, setDias] = useState(() => Array(10).fill(null).map(() => [...TODOS_LOS_DIAS]))
   const [cargando, setCargando] = useState(true)
   const [cargandoPlantilla, setCargandoPlantilla] = useState(false)
   const [guardando, setGuardando] = useState(false)
@@ -44,12 +50,17 @@ export default function RetirosPrecargados() {
     const snap = await getDoc(ref)
     if (snap.exists()) {
       const lista = snap.data().clientes || []
-      // Asegurar al menos 10 filas, agregando vacías si faltan
+      // "dias" va aparte y en el mismo orden que "clientes". Las plantillas viejas no lo tienen: todos los días.
+      const listaDias = snap.data().dias || []
       const conMinimo = [...lista]
-      while (conMinimo.length < 10) conMinimo.push('')
+      const diasConMinimo = lista.map((_, i) => Array.isArray(listaDias[i]) ? [...listaDias[i]] : [...TODOS_LOS_DIAS])
+      // Asegurar al menos 10 filas, agregando vacías si faltan
+      while (conMinimo.length < 10) { conMinimo.push(''); diasConMinimo.push([...TODOS_LOS_DIAS]) }
       setClientes(conMinimo)
+      setDias(diasConMinimo)
     } else {
       setClientes(Array(10).fill(''))
+      setDias(Array(10).fill(null).map(() => [...TODOS_LOS_DIAS]))
     }
     setCargandoPlantilla(false)
   }
@@ -60,22 +71,39 @@ export default function RetirosPrecargados() {
     setClientes(nuevos)
   }
 
+  // Prende o apaga un día para el cliente de la fila i
+  function cambiarDia(i, numeroDia) {
+    const nuevos = dias.map(d => [...d])
+    nuevos[i] = nuevos[i].includes(numeroDia)
+      ? nuevos[i].filter(n => n !== numeroDia)
+      : [...nuevos[i], numeroDia].sort()
+    setDias(nuevos)
+  }
+
   function agregarFila() {
     setClientes([...clientes, ''])
+    setDias([...dias, [...TODOS_LOS_DIAS]])
   }
 
   function quitarFila(i) {
-    const nuevos = clientes.filter((_, idx) => idx !== i)
-    setClientes(nuevos)
+    setClientes(clientes.filter((_, idx) => idx !== i))
+    setDias(dias.filter((_, idx) => idx !== i))
   }
 
   async function guardar() {
+    // Un cliente sin ningún día marcado no se cargaría nunca: avisamos en vez de guardar
+    const sinDias = clientes.filter((c, i) => c.trim() && dias[i].length === 0)
+    if (sinDias.length) {
+      window.alert(`Marcá al menos un día para: ${sinDias.join(', ')}`)
+      return
+    }
     setGuardando(true)
-    const limpios = clientes.filter(c => c.trim())
+    const filas = clientes.map((c, i) => ({ cliente: c, dias: dias[i] })).filter(f => f.cliente.trim())
     await setDoc(doc(db, 'retirosPrecargados', `${choferId}_${turno}`), {
       choferId,
       turno,
-      clientes: limpios
+      clientes: filas.map(f => f.cliente),
+      dias: filas.map(f => f.dias)
     })
     setGuardando(false)
     setGuardado(true)
@@ -96,6 +124,7 @@ export default function RetirosPrecargados() {
       <p style={{ color: '#666', fontSize: '14px', marginBottom: '20px' }}>
         Armá la lista de clientes habituales para cada chofer y turno. Después, desde la planilla del día,
         van a poder cargarla con un solo click en vez de escribir cliente por cliente.
+        Si un cliente no va todos los días, dejá marcados solo los días en que va.
       </p>
 
       <div style={{ background: 'white', borderRadius: '12px', padding: '20px', marginBottom: '20px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
@@ -140,6 +169,17 @@ export default function RetirosPrecargados() {
                     style={IS}
                     onSelect={(nombre) => actualizarCliente(i, nombre)}
                   />
+                </div>
+                <div style={{ display: 'flex', gap: '3px', flexShrink: 0 }}>
+                  {DIAS_SEMANA.map(([n, letra]) => {
+                    const marcado = (dias[i] || []).includes(n)
+                    return (
+                      <button key={n} onClick={() => cambiarDia(i, n)} title={marcado ? 'Va este día' : 'No va este día'}
+                        style={{ width: '26px', height: '30px', padding: 0, borderRadius: '6px', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '700', background: marcado ? '#1a1a2e' : '#edf2f7', color: marcado ? 'white' : '#a0aec0' }}>
+                        {letra}
+                      </button>
+                    )
+                  })}
                 </div>
                 <button onClick={() => quitarFila(i)} title="Quitar fila"
                   style={{ background: 'none', border: 'none', color: '#bbb', fontSize: '18px', cursor: 'pointer', padding: '4px 8px' }}>

@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { collection, getDocs, getDoc, addDoc, deleteDoc, doc, onSnapshot } from 'firebase/firestore'
+import { collection, getDocs, getDoc, addDoc, deleteDoc, updateDoc, doc, onSnapshot } from 'firebase/firestore'
 import { db } from '../firebase'
-import { hoyLocal } from '../utils/fechas'
+import { hoyLocal, fechaLocal } from '../utils/fechas'
 import { useAuth } from '../hooks/useAuth.jsx'
 
 function hoy() {
@@ -95,6 +95,29 @@ function estadoChofer(progreso) {
   return null
 }
 
+// ─── AUSENCIAS (faltas y licencias) ───
+// Cada ausencia se guarda en la colección "ausencias" con un rango de fechas:
+//   { choferId, choferNombre, tipo: 'falta' | 'licencia', desde: 'AAAA-MM-DD', hasta: 'AAAA-MM-DD', nota }
+// Un chofer está ausente un día si ese día cae entre "desde" y "hasta" (incluidos).
+// Las fechas AAAA-MM-DD se pueden comparar como texto, por eso alcanza con <= y >=.
+function ausenciaEnFecha(ausencias, choferId, fecha) {
+  return ausencias.find(a => a.choferId === choferId && a.desde <= fecha && a.hasta >= fecha) || null
+}
+
+// "2026-11-10" -> "10/11"
+function fechaCorta(f) {
+  const [, m, d] = f.split('-')
+  return `${d}/${m}`
+}
+
+// Día anterior a una fecha AAAA-MM-DD
+function diaAnterior(f) {
+  const [y, m, d] = f.split('-').map(Number)
+  return fechaLocal(new Date(y, m - 1, d - 1))
+}
+
+const NOMBRE_TIPO = { falta: 'Falta', licencia: 'Licencia' }
+
 // Colores de cada estado: fondo, borde, texto principal y texto secundario
 const COLORES_TARJETA = {
   verde:    { fondo: '#22A04B', borde: '#1C8A40', texto: 'white',   textoSuave: '#E3F5E8' },
@@ -145,8 +168,29 @@ export default function Dashboard() {
   const [guardandoPuntual, setGuardandoPuntual] = useState(false)
   const [avisoPuntual, setAvisoPuntual] = useState('')
 
+  // Ausencias
+  const [ausencias, setAusencias] = useState([])
+  const [mostrarAusentes, setMostrarAusentes] = useState(false)
+  const [mostrarVentanaAusencias, setMostrarVentanaAusencias] = useState(false)
+  const [formAusencia, setFormAusencia] = useState({ choferId: '', tipo: 'falta', desde: '', hasta: '', nota: '' })
+  const [guardandoAusencia, setGuardandoAusencia] = useState(false)
+  const [avisoAusencia, setAvisoAusencia] = useState('')
+
   const esChofer = usuario.rol === 'chofer'
   const esOficina = ['admin', 'operador', 'coordinador'].includes(usuario.rol)
+  // Solo el admin y el coordinador pueden marcar o quitar ausencias
+  const puedeMarcarAusencias = ['admin', 'coordinador'].includes(usuario.rol)
+
+  // Ausencias en tiempo real (solo la oficina las necesita; el chofer siempre ve su tarjeta)
+  useEffect(() => {
+    if (!esOficina) return
+    const unsub = onSnapshot(
+      collection(db, 'ausencias'),
+      snap => setAusencias(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
+      () => setAusencias([])
+    )
+    return () => unsub()
+  }, [esOficina])
 
   // Lista de choferes en tiempo real: así, si un operador agrega un chofer
   // puntual, a los demás operadores les aparece sin recargar la página.
@@ -203,9 +247,78 @@ export default function Dashboard() {
     return () => unsub()
   }, [fecha, turno, hayChoferes, esOficina])
 
+  // Choferes fijos ausentes en la fecha elegida.
+  // Si un ausente igual tiene cosas cargadas en su planilla ese turno, se sigue mostrando
+  // (con la etiqueta), para que no "desaparezca" trabajo que hay que controlar.
+  const tieneTareas = id => {
+    const p = progresoPorChofer[id]
+    return !!p && (p.levantes.total + p.puntuales.total + p.entregas.total) > 0
+  }
+  const ausentesDelDia = esOficina
+    ? fijos.filter(c => ausenciaEnFecha(ausencias, c.id, fecha))
+    : []
+  const ausentesOcultos = ausentesDelDia.filter(c => !tieneTareas(c.id))
+  const idsOcultos = new Set(mostrarAusentes ? [] : ausentesOcultos.map(c => c.id))
+
   const choferesFiltrados = esChofer
     ? choferes.filter(c => c.id === usuario.choferId)
-    : choferes
+    : choferes.filter(c => !idsOcultos.has(c.id))
+
+  // Ausencias que siguen vigentes o son a futuro (para la lista de la ventana)
+  const ausenciasVigentes = ausencias
+    .filter(a => a.hasta >= hoy())
+    .sort((a, b) => a.desde.localeCompare(b.desde))
+
+  function abrirVentanaAusencias() {
+    setFormAusencia({ choferId: '', tipo: 'falta', desde: fecha, hasta: fecha, nota: '' })
+    setAvisoAusencia('')
+    setMostrarVentanaAusencias(true)
+  }
+
+  async function guardarAusencia() {
+    const { choferId, tipo, desde, hasta, nota } = formAusencia
+    if (!choferId) { setAvisoAusencia('Elegí el chofer.'); return }
+    if (!desde || !hasta) { setAvisoAusencia('Completá las dos fechas.'); return }
+    if (hasta < desde) { setAvisoAusencia('La fecha "hasta" no puede ser anterior a "desde".'); return }
+    const chofer = todosChoferes.find(c => c.id === choferId)
+    setGuardandoAusencia(true)
+    setAvisoAusencia('')
+    try {
+      await addDoc(collection(db, 'ausencias'), {
+        choferId,
+        choferNombre: chofer?.nombre || '',
+        tipo,
+        desde,
+        hasta,
+        nota: nota.trim(),
+        creadoAt: Date.now(),
+        creadoPor: usuario.nombre || usuario.email || ''
+      })
+      // Dejamos la ventana abierta y limpiamos el formulario, por si hay que marcar a otro
+      setFormAusencia({ choferId: '', tipo: 'falta', desde: fecha, hasta: fecha, nota: '' })
+    } catch {
+      setAvisoAusencia('No se pudo guardar la ausencia. Revisá la conexión y probá de nuevo.')
+    }
+    setGuardandoAusencia(false)
+  }
+
+  // Quitar una ausencia:
+  //  - si todavía no empezó, se borra.
+  //  - si ya empezó (el chofer volvió antes), se corta en el día de ayer, así queda el registro de los días que faltó.
+  async function quitarAusencia(a) {
+    const fechaHoy = hoy()
+    const yaEmpezo = a.desde < fechaHoy
+    const mensaje = yaEmpezo
+      ? `¿${a.choferNombre} vuelve hoy? La ausencia queda registrada hasta ayer.`
+      : `¿Quitar la ${NOMBRE_TIPO[a.tipo]?.toLowerCase() || 'ausencia'} de ${a.choferNombre}?`
+    if (!window.confirm(mensaje)) return
+    try {
+      if (yaEmpezo) await updateDoc(doc(db, 'ausencias', a.id), { hasta: diaAnterior(fechaHoy) })
+      else await deleteDoc(doc(db, 'ausencias', a.id))
+    } catch {
+      window.alert('No se pudo quitar la ausencia. Revisá la conexión y probá de nuevo.')
+    }
+  }
 
   // Totales generales sumando todos los choferes del turno seleccionado
   const totales = Object.values(progresoPorChofer).reduce((acc, p) => {
@@ -426,6 +539,29 @@ export default function Dashboard() {
             style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 18px', background: 'white', color: '#1a1a2e', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
             📋 Consultar retiros del turno
           </button>
+          {puedeMarcarAusencias && (
+            <button
+              onClick={abrirVentanaAusencias}
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 18px', background: 'white', color: '#1a1a2e', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+              🚫 Faltas y licencias
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* AVISO DE AUSENTES + BOTÓN MOSTRAR/OCULTAR — solo oficina */}
+      {esOficina && ausentesDelDia.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap', background: '#f7f7f9', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px 14px', marginBottom: '14px', fontSize: '13px', color: '#555' }}>
+          <span>
+            🚫 Ausentes el {fechaCorta(fecha)}: <strong>{ausentesDelDia.map(c => c.nombre).join(', ')}</strong>
+          </span>
+          {ausentesOcultos.length > 0 && (
+            <button
+              onClick={() => setMostrarAusentes(!mostrarAusentes)}
+              style={{ padding: '6px 12px', background: 'white', color: '#1a1a2e', border: '1px solid #cbd5e0', borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+              {mostrarAusentes ? 'Ocultar ausentes' : `Mostrar ausentes (${ausentesOcultos.length})`}
+            </button>
+          )}
         </div>
       )}
 
@@ -442,11 +578,12 @@ export default function Dashboard() {
             const colores = COLORES_TARJETA[estado || 'blanco']
             // En blanco, los contadores mantienen su color normal (verde si esa parte está completa)
             const colorContador = estado ? colores.texto : null
+            const ausencia = esOficina ? ausenciaEnFecha(ausencias, chofer.id, fecha) : null
             return (
               <div
                 key={chofer.id}
                 onClick={() => navigate(`/planilla/${fecha}/${chofer.id}${esOficina ? `?turno=${turno}` : ''}`)}
-                style={{ background: colores.fondo, border: `1px solid ${colores.borde}`, borderRadius: '12px', padding: '16px', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', position: 'relative' }}
+                style={{ background: colores.fondo, border: `1px solid ${colores.borde}`, borderRadius: '12px', padding: '16px', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', position: 'relative', opacity: ausencia && !estado ? 0.6 : 1 }}
                 onMouseOver={e => e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.12)'}
                 onMouseOut={e => e.currentTarget.style.boxShadow = '0 1px 4px rgba(0,0,0,0.06)'}
               >
@@ -471,6 +608,13 @@ export default function Dashboard() {
                         ✕
                       </button>
                     )}
+                  </div>
+                )}
+                {ausencia && (
+                  <div style={{ marginBottom: '6px' }}>
+                    <span style={{ background: estado ? 'rgba(255,255,255,0.35)' : '#fde8e8', color: estado ? colores.texto : '#c53030', fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '10px' }}>
+                      {NOMBRE_TIPO[ausencia.tipo] || 'Ausente'} hasta {fechaCorta(ausencia.hasta)}
+                    </span>
                   </div>
                 )}
                 <div style={{ fontWeight: '600', color: colores.texto }}>{chofer.nombre}</div>
@@ -523,6 +667,105 @@ export default function Dashboard() {
                 style={{ flex: 1, padding: '12px', background: '#1a1a2e', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', fontSize: '14px' }}>
                 {guardandoPuntual ? 'Agregando...' : 'Agregar'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* VENTANA DE FALTAS Y LICENCIAS — solo admin y coordinador */}
+      {mostrarVentanaAusencias && (
+        <div
+          onClick={() => !guardandoAusencia && setMostrarVentanaAusencias(false)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px' }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: 'white', borderRadius: '12px', padding: '24px', maxWidth: '440px', width: '100%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 4px 20px rgba(0,0,0,0.2)', boxSizing: 'border-box' }}>
+            <h3 style={{ margin: '0 0 6px', color: '#1a1a2e' }}>Faltas y licencias</h3>
+            <p style={{ margin: '0 0 16px', fontSize: '13px', color: '#666' }}>
+              El chofer no aparece en el inicio durante esos días. Al terminar, vuelve a aparecer solo.
+            </p>
+
+            <label style={{ fontSize: '13px', color: '#666', marginBottom: '6px', display: 'block' }}>Chofer</label>
+            <select
+              value={formAusencia.choferId}
+              onChange={e => { setFormAusencia({ ...formAusencia, choferId: e.target.value }); setAvisoAusencia('') }}
+              style={{ width: '100%', padding: '11px 12px', border: '1px solid #ddd', borderRadius: '8px', fontSize: '16px', boxSizing: 'border-box', background: 'white' }}>
+              <option value="">Elegí un chofer...</option>
+              {fijos.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+            </select>
+
+            <label style={{ fontSize: '13px', color: '#666', margin: '14px 0 6px', display: 'block' }}>Motivo</label>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              {['falta', 'licencia'].map(t => (
+                <button key={t} onClick={() => setFormAusencia({ ...formAusencia, tipo: t })}
+                  style={{ flex: 1, padding: '10px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: '600', fontSize: '14px', background: formAusencia.tipo === t ? '#1a1a2e' : '#e2e8f0', color: formAusencia.tipo === t ? 'white' : '#444' }}>
+                  {NOMBRE_TIPO[t]}
+                </button>
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', marginTop: '14px' }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <label style={{ fontSize: '13px', color: '#666', marginBottom: '6px', display: 'block' }}>Desde</label>
+                <input type="date" value={formAusencia.desde}
+                  onChange={e => {
+                    const desde = e.target.value
+                    // Si "hasta" quedó antes que "desde", lo emparejamos
+                    const hasta = formAusencia.hasta && formAusencia.hasta < desde ? desde : formAusencia.hasta
+                    setFormAusencia({ ...formAusencia, desde, hasta }); setAvisoAusencia('')
+                  }}
+                  style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '8px', fontSize: '15px', boxSizing: 'border-box' }} />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <label style={{ fontSize: '13px', color: '#666', marginBottom: '6px', display: 'block' }}>Hasta (incluido)</label>
+                <input type="date" value={formAusencia.hasta}
+                  onChange={e => { setFormAusencia({ ...formAusencia, hasta: e.target.value }); setAvisoAusencia('') }}
+                  style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '8px', fontSize: '15px', boxSizing: 'border-box' }} />
+              </div>
+            </div>
+
+            <label style={{ fontSize: '13px', color: '#666', margin: '14px 0 6px', display: 'block' }}>Nota (opcional)</label>
+            <input type="text" value={formAusencia.nota}
+              onChange={e => setFormAusencia({ ...formAusencia, nota: e.target.value })}
+              placeholder="Ej: problema familiar"
+              style={{ width: '100%', padding: '11px 12px', border: '1px solid #ddd', borderRadius: '8px', fontSize: '16px', boxSizing: 'border-box' }} />
+
+            {avisoAusencia && <p style={{ margin: '8px 0 0', fontSize: '13px', color: '#e53e3e' }}>{avisoAusencia}</p>}
+
+            <div style={{ display: 'flex', gap: '10px', marginTop: '18px' }}>
+              <button onClick={() => setMostrarVentanaAusencias(false)} disabled={guardandoAusencia}
+                style={{ flex: 1, padding: '12px', background: '#f0f0f0', color: '#444', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', fontSize: '14px' }}>
+                Cerrar
+              </button>
+              <button onClick={guardarAusencia} disabled={guardandoAusencia}
+                style={{ flex: 1, padding: '12px', background: '#1a1a2e', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', fontSize: '14px' }}>
+                {guardandoAusencia ? 'Guardando...' : 'Guardar ausencia'}
+              </button>
+            </div>
+
+            {/* Lista de ausencias de hoy en adelante */}
+            <div style={{ marginTop: '22px', borderTop: '1px solid #eee', paddingTop: '14px' }}>
+              <div style={{ fontWeight: '600', color: '#1a1a2e', fontSize: '14px', marginBottom: '10px' }}>Ausencias cargadas</div>
+              {ausenciasVigentes.length === 0 ? (
+                <p style={{ margin: 0, fontSize: '13px', color: '#888' }}>No hay faltas ni licencias de hoy en adelante.</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {ausenciasVigentes.map(a => (
+                    <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', background: '#f8f9fa', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: '600', color: '#1a1a2e', fontSize: '14px' }}>{a.choferNombre}</div>
+                        <div style={{ fontSize: '12px', color: '#666' }}>
+                          {NOMBRE_TIPO[a.tipo] || 'Ausencia'} · {a.desde === a.hasta ? fechaCorta(a.desde) : `${fechaCorta(a.desde)} al ${fechaCorta(a.hasta)}`}
+                          {a.nota ? ` · ${a.nota}` : ''}
+                        </div>
+                      </div>
+                      <button onClick={() => quitarAusencia(a)}
+                        style={{ padding: '6px 10px', background: '#fff5f5', color: '#e53e3e', border: '1px solid #e53e3e', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                        Quitar
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>

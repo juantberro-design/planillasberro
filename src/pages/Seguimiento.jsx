@@ -122,6 +122,17 @@ export default function Seguimiento() {
     return () => unsub()
   }, [])
 
+  // Faltas y licencias en tiempo real (para no mostrar a los choferes ausentes)
+  const [ausencias, setAusencias] = useState([])
+  useEffect(() => {
+    const unsub = onSnapshot(
+      collection(db, 'ausencias'),
+      snap => setAusencias(snap.docs.map(d => d.data())),
+      () => setAusencias([])
+    )
+    return () => unsub()
+  }, [])
+
   // Planillas del día y turno elegidos, en tiempo real
   useEffect(() => {
     setCargando(true)
@@ -147,8 +158,10 @@ export default function Seguimiento() {
 
   // Mismos choferes que ve la oficina: fijos activos + puntuales de este día/turno.
   // Además, cualquier otro chofer que tenga planilla ese día (por ejemplo, uno que después se desactivó).
+  // Los fijos que tienen falta o licencia ese día no se listan (si igual tienen planilla, aparecen igual abajo).
+  const estaAusente = id => ausencias.some(a => a.choferId === id && a.desde <= fecha && a.hasta >= fecha)
   const fijos = todosChoferes
-    .filter(c => !c.puntual && c.activo)
+    .filter(c => !c.puntual && c.activo && !estaAusente(c.id))
     .sort((a, b) => (a.orden || 0) - (b.orden || 0))
   const puntuales = todosChoferes
     .filter(c => c.puntual && c.fecha === fecha && c.turno === turno)

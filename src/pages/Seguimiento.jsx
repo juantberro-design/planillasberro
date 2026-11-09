@@ -158,8 +158,12 @@ export default function Seguimiento() {
 
   // Mismos choferes que ve la oficina: fijos activos + puntuales de este día/turno.
   // Además, cualquier otro chofer que tenga planilla ese día (por ejemplo, uno que después se desactivó).
-  // Los fijos que tienen falta o licencia ese día no se listan (si igual tienen planilla, aparecen igual abajo).
-  const estaAusente = id => ausencias.some(a => a.choferId === id && a.desde <= fecha && a.hasta >= fecha)
+  // Los fijos que tienen falta o licencia ese día y turno no se listan (si igual tienen planilla, aparecen igual abajo).
+  // Las ausencias sin turno (o con 'ambos') son de todo el día.
+  const estaAusente = id => ausencias.some(a =>
+    a.choferId === id && a.desde <= fecha && a.hasta >= fecha &&
+    (!a.turno || a.turno === 'ambos' || a.turno === turno)
+  )
   const fijos = todosChoferes
     .filter(c => !c.puntual && c.activo && !estaAusente(c.id))
     .sort((a, b) => (a.orden || 0) - (b.orden || 0))

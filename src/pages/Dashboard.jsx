@@ -97,11 +97,24 @@ function estadoChofer(progreso) {
 
 // ─── AUSENCIAS (faltas y licencias) ───
 // Cada ausencia se guarda en la colección "ausencias" con un rango de fechas:
-//   { choferId, choferNombre, tipo: 'falta' | 'licencia', desde: 'AAAA-MM-DD', hasta: 'AAAA-MM-DD', nota }
-// Un chofer está ausente un día si ese día cae entre "desde" y "hasta" (incluidos).
+//   { choferId, choferNombre, tipo: 'falta' | 'licencia', desde: 'AAAA-MM-DD', hasta: 'AAAA-MM-DD',
+//     turno: 'ambos' | 'mañana' | 'tarde', nota }
+// Un chofer está ausente un día y turno si ese día cae entre "desde" y "hasta" (incluidos)
+// y la ausencia es de todo el día ("ambos") o de ese turno.
+// Las ausencias viejas, sin campo turno, cuentan como todo el día.
 // Las fechas AAAA-MM-DD se pueden comparar como texto, por eso alcanza con <= y >=.
-function ausenciaEnFecha(ausencias, choferId, fecha) {
-  return ausencias.find(a => a.choferId === choferId && a.desde <= fecha && a.hasta >= fecha) || null
+function ausenciaCubreTurno(a, turno) {
+  return !a.turno || a.turno === 'ambos' || a.turno === turno
+}
+function ausenciaEnFecha(ausencias, choferId, fecha, turno) {
+  return ausencias.find(a =>
+    a.choferId === choferId && a.desde <= fecha && a.hasta >= fecha && ausenciaCubreTurno(a, turno)
+  ) || null
+}
+
+// Texto corto del turno de una ausencia: '' si es todo el día, ' (mañana)' o ' (tarde)' si es medio día
+function textoTurnoAusencia(a) {
+  return !a.turno || a.turno === 'ambos' ? '' : ` (${a.turno})`
 }
 
 // "2026-11-10" -> "10/11"
@@ -172,7 +185,7 @@ export default function Dashboard() {
   const [ausencias, setAusencias] = useState([])
   const [mostrarAusentes, setMostrarAusentes] = useState(false)
   const [mostrarVentanaAusencias, setMostrarVentanaAusencias] = useState(false)
-  const [formAusencia, setFormAusencia] = useState({ choferId: '', tipo: 'falta', desde: '', hasta: '', nota: '' })
+  const [formAusencia, setFormAusencia] = useState({ choferId: '', tipo: 'falta', desde: '', hasta: '', turno: 'ambos', nota: '' })
   const [guardandoAusencia, setGuardandoAusencia] = useState(false)
   const [avisoAusencia, setAvisoAusencia] = useState('')
 
@@ -255,7 +268,7 @@ export default function Dashboard() {
     return !!p && (p.levantes.total + p.puntuales.total + p.entregas.total) > 0
   }
   const ausentesDelDia = esOficina
-    ? fijos.filter(c => ausenciaEnFecha(ausencias, c.id, fecha))
+    ? fijos.filter(c => ausenciaEnFecha(ausencias, c.id, fecha, turno))
     : []
   const ausentesOcultos = ausentesDelDia.filter(c => !tieneTareas(c.id))
   const idsOcultos = new Set(mostrarAusentes ? [] : ausentesOcultos.map(c => c.id))
@@ -270,13 +283,13 @@ export default function Dashboard() {
     .sort((a, b) => a.desde.localeCompare(b.desde))
 
   function abrirVentanaAusencias() {
-    setFormAusencia({ choferId: '', tipo: 'falta', desde: fecha, hasta: fecha, nota: '' })
+    setFormAusencia({ choferId: '', tipo: 'falta', desde: fecha, hasta: fecha, turno: 'ambos', nota: '' })
     setAvisoAusencia('')
     setMostrarVentanaAusencias(true)
   }
 
   async function guardarAusencia() {
-    const { choferId, tipo, desde, hasta, nota } = formAusencia
+    const { choferId, tipo, desde, hasta, turno: turnoAusencia, nota } = formAusencia
     if (!choferId) { setAvisoAusencia('Elegí el chofer.'); return }
     if (!desde || !hasta) { setAvisoAusencia('Completá las dos fechas.'); return }
     if (hasta < desde) { setAvisoAusencia('La fecha "hasta" no puede ser anterior a "desde".'); return }
@@ -290,12 +303,13 @@ export default function Dashboard() {
         tipo,
         desde,
         hasta,
+        turno: turnoAusencia,
         nota: nota.trim(),
         creadoAt: Date.now(),
         creadoPor: usuario.nombre || usuario.email || ''
       })
       // Dejamos la ventana abierta y limpiamos el formulario, por si hay que marcar a otro
-      setFormAusencia({ choferId: '', tipo: 'falta', desde: fecha, hasta: fecha, nota: '' })
+      setFormAusencia({ choferId: '', tipo: 'falta', desde: fecha, hasta: fecha, turno: 'ambos', nota: '' })
     } catch {
       setAvisoAusencia('No se pudo guardar la ausencia. Revisá la conexión y probá de nuevo.')
     }
@@ -553,7 +567,7 @@ export default function Dashboard() {
       {esOficina && ausentesDelDia.length > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap', background: '#f7f7f9', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px 14px', marginBottom: '14px', fontSize: '13px', color: '#555' }}>
           <span>
-            🚫 Ausentes el {fechaCorta(fecha)}: <strong>{ausentesDelDia.map(c => c.nombre).join(', ')}</strong>
+            🚫 Ausentes el {fechaCorta(fecha)} ({turno}): <strong>{ausentesDelDia.map(c => c.nombre).join(', ')}</strong>
           </span>
           {ausentesOcultos.length > 0 && (
             <button
@@ -578,7 +592,7 @@ export default function Dashboard() {
             const colores = COLORES_TARJETA[estado || 'blanco']
             // En blanco, los contadores mantienen su color normal (verde si esa parte está completa)
             const colorContador = estado ? colores.texto : null
-            const ausencia = esOficina ? ausenciaEnFecha(ausencias, chofer.id, fecha) : null
+            const ausencia = esOficina ? ausenciaEnFecha(ausencias, chofer.id, fecha, turno) : null
             return (
               <div
                 key={chofer.id}
@@ -613,7 +627,7 @@ export default function Dashboard() {
                 {ausencia && (
                   <div style={{ marginBottom: '6px' }}>
                     <span style={{ background: estado ? 'rgba(255,255,255,0.35)' : '#fde8e8', color: estado ? colores.texto : '#c53030', fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '10px' }}>
-                      {NOMBRE_TIPO[ausencia.tipo] || 'Ausente'} hasta {fechaCorta(ausencia.hasta)}
+                      {NOMBRE_TIPO[ausencia.tipo] || 'Ausente'}{textoTurnoAusencia(ausencia)} hasta {fechaCorta(ausencia.hasta)}
                     </span>
                   </div>
                 )}
@@ -723,6 +737,21 @@ export default function Dashboard() {
               </div>
             </div>
 
+            <label style={{ fontSize: '13px', color: '#666', margin: '14px 0 6px', display: 'block' }}>Turno</label>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              {[['ambos', 'Todo el día'], ['mañana', 'Solo mañana'], ['tarde', 'Solo tarde']].map(([valor, texto]) => (
+                <button key={valor} onClick={() => setFormAusencia({ ...formAusencia, turno: valor })}
+                  style={{ flex: 1, padding: '10px 6px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: '600', fontSize: '13px', background: formAusencia.turno === valor ? '#1a1a2e' : '#e2e8f0', color: formAusencia.turno === valor ? 'white' : '#444' }}>
+                  {texto}
+                </button>
+              ))}
+            </div>
+            {formAusencia.turno !== 'ambos' && formAusencia.desde !== formAusencia.hasta && (
+              <p style={{ margin: '6px 0 0', fontSize: '12px', color: '#666' }}>
+                Se aplica a la {formAusencia.turno} de todos los días entre esas fechas.
+              </p>
+            )}
+
             <label style={{ fontSize: '13px', color: '#666', margin: '14px 0 6px', display: 'block' }}>Nota (opcional)</label>
             <input type="text" value={formAusencia.nota}
               onChange={e => setFormAusencia({ ...formAusencia, nota: e.target.value })}
@@ -754,7 +783,7 @@ export default function Dashboard() {
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontWeight: '600', color: '#1a1a2e', fontSize: '14px' }}>{a.choferNombre}</div>
                         <div style={{ fontSize: '12px', color: '#666' }}>
-                          {NOMBRE_TIPO[a.tipo] || 'Ausencia'} · {a.desde === a.hasta ? fechaCorta(a.desde) : `${fechaCorta(a.desde)} al ${fechaCorta(a.hasta)}`}
+                          {NOMBRE_TIPO[a.tipo] || 'Ausencia'}{textoTurnoAusencia(a)} · {a.desde === a.hasta ? fechaCorta(a.desde) : `${fechaCorta(a.desde)} al ${fechaCorta(a.hasta)}`}
                           {a.nota ? ` · ${a.nota}` : ''}
                         </div>
                       </div>

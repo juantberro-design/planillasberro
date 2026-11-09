@@ -511,32 +511,117 @@ export default function Planilla() {
     return datos.current.levantes.some(l => l.cliente && l.cliente.trim())
   }
 
+  // Lee la plantilla precargada de un chofer para este turno (lista de nombres de clientes)
+  async function leerPlantilla(idChofer) {
+    const snap = await getDoc(doc(db, 'retirosPrecargados', `${idChofer}_${turno}`))
+    return snap.exists() ? (snap.data().clientes || []).filter(c => c && c.trim()) : []
+  }
+
+  // Botón "Cargar planilla precargada".
+  // Además de la plantilla propia, suma las de los choferes que están con falta/licencia
+  // este día y turno y que tienen a ESTE chofer como reemplazo (colección "ausencias").
+  //  - Planilla vacía: carga lo propio + lo de los ausentes (sin repetir clientes).
+  //  - Planilla ya cargada: si hay ausentes a cargo, agrega al final solo sus clientes que falten;
+  //    si no hay, avisa como antes y no toca nada.
+  //  - Si ESTE chofer es el que está ausente, no carga y avisa quién hace sus retiros.
   async function cargarPlantillaPrecargada() {
     setAvisoPlantilla('')
-    if (planillaTieneAlgoEnLevantes()) {
-      setAvisoPlantilla('Esta planilla ya tiene clientes cargados en Levantes. Borrá los datos a mano si querés reemplazarlos por la plantilla precargada.')
-      return
-    }
     setCargandoPlantilla(true)
     try {
-      const ref = doc(db, 'retirosPrecargados', `${choferId}_${turno}`)
-      const snap = await getDoc(ref)
-      if (!snap.exists() || !(snap.data().clientes || []).length) {
+      const snapAusencias = await getDocs(collection(db, 'ausencias'))
+      const ausenciasHoy = snapAusencias.docs
+        .map(d => d.data())
+        .filter(a => a.desde <= fecha && a.hasta >= fecha && (!a.turno || a.turno === 'ambos' || a.turno === turno))
+      const nombreTipo = a => (a.tipo === 'licencia' ? 'licencia' : 'falta')
+
+      // ¿Este chofer está ausente?
+      const propia = ausenciasHoy.find(a => a.choferId === choferId)
+      if (propia) {
+        setAvisoPlantilla(propia.reemplazoId
+          ? `${propia.choferNombre || 'Este chofer'} está con ${nombreTipo(propia)}. Sus retiros precargados los hace ${propia.reemplazoNombre || 'otro chofer'}: cargalos desde la planilla de ese chofer.`
+          : `${propia.choferNombre || 'Este chofer'} está con ${nombreTipo(propia)} este día. No se cargó la plantilla.`)
+        setCargandoPlantilla(false)
+        return
+      }
+
+      // Ausentes cuyos retiros hace este chofer
+      const aCargo = ausenciasHoy.filter(a => a.reemplazoId === choferId)
+      const plantillasAusentes = await Promise.all(aCargo.map(async a => ({
+        nombre: a.choferNombre || 'otro chofer',
+        tipo: nombreTipo(a),
+        clientes: await leerPlantilla(a.choferId)
+      })))
+      const textoAusentes = plantillasAusentes
+        .filter(p => p.clientes.length)
+        .map(p => `${p.nombre} (${p.tipo})`)
+        .join(', ')
+
+      // Para no repetir clientes (sin importar mayúsculas ni espacios)
+      const clave = c => c.trim().toUpperCase()
+
+      if (planillaTieneAlgoEnLevantes()) {
+        if (aCargo.length === 0) {
+          setAvisoPlantilla('Esta planilla ya tiene clientes cargados en Levantes. Borrá los datos a mano si querés reemplazarlos por la plantilla precargada.')
+          setCargandoPlantilla(false)
+          return
+        }
+        // Agregar solo los clientes de los ausentes que todavía no están
+        const yaEstan = new Set(datos.current.levantes.filter(l => l.cliente && l.cliente.trim()).map(l => clave(l.cliente)))
+        const aAgregar = []
+        plantillasAusentes.forEach(p => p.clientes.forEach(c => {
+          if (!yaEstan.has(clave(c))) { yaEstan.add(clave(c)); aAgregar.push(c) }
+        }))
+        if (aAgregar.length === 0) {
+          setAvisoPlantilla(textoAusentes
+            ? `Los clientes de ${textoAusentes} ya están todos en esta planilla.`
+            : 'Los choferes que cubre este chofer no tienen plantilla precargada para este turno.')
+          setCargandoPlantilla(false)
+          return
+        }
+        // Se usan primero las filas vacías (sin mover las filas que ya tienen datos) y después se agregan filas al final
+        const levantes = datos.current.levantes
+        let pendientes = [...aAgregar]
+        for (let i = 0; i < levantes.length && pendientes.length; i++) {
+          if (!levantes[i].cliente || !levantes[i].cliente.trim()) {
+            levantes[i] = { ...levanteVacio(), cliente: pendientes.shift() }
+          }
+        }
+        pendientes.forEach(cliente => levantes.push({ ...levanteVacio(), cliente }))
+        setSnapshot(JSON.parse(JSON.stringify(datos.current)))
+        programar(0)
+        setAvisoPlantilla(`Se cargaron ${aAgregar.length} cliente${aAgregar.length !== 1 ? 's' : ''} de ${textoAusentes}.`)
+        setTimeout(() => setAvisoPlantilla(''), 6000)
+        setCargandoPlantilla(false)
+        return
+      }
+
+      // Planilla vacía: lo propio + lo de los ausentes, sin repetir
+      const propios = await leerPlantilla(choferId)
+      const vistos = new Set()
+      const todos = []
+      const agregar = c => { if (!vistos.has(clave(c))) { vistos.add(clave(c)); todos.push(c) } }
+      propios.forEach(agregar)
+      const cantPropios = todos.length
+      plantillasAusentes.forEach(p => p.clientes.forEach(agregar))
+      const cantAusentes = todos.length - cantPropios
+
+      if (todos.length === 0) {
         setAvisoPlantilla('No hay una plantilla precargada guardada para este chofer y turno. Podés crearla desde Admin → Retiros precargados.')
         setCargandoPlantilla(false)
         return
       }
-      const clientesPlantilla = snap.data().clientes
-      const nuevosLevantes = clientesPlantilla.map(cliente => ({ ...levanteVacio(), cliente }))
-      // Si la plantilla tiene más clientes que filas actuales, se agregan filas extra
+      const nuevosLevantes = todos.map(cliente => ({ ...levanteVacio(), cliente }))
+      // Si la plantilla tiene menos clientes que filas actuales, se completan con filas vacías
       while (nuevosLevantes.length < datos.current.levantes.length) {
         nuevosLevantes.push(levanteVacio())
       }
       datos.current.levantes = nuevosLevantes
       setSnapshot(JSON.parse(JSON.stringify(datos.current)))
       programar(0)
-      setAvisoPlantilla(`Se cargaron ${clientesPlantilla.length} cliente${clientesPlantilla.length !== 1 ? 's' : ''} de la plantilla.`)
-      setTimeout(() => setAvisoPlantilla(''), 4000)
+      setAvisoPlantilla(cantAusentes > 0
+        ? `Se cargaron ${cantPropios} cliente${cantPropios !== 1 ? 's' : ''} propio${cantPropios !== 1 ? 's' : ''} + ${cantAusentes} de ${textoAusentes}.`
+        : `Se cargaron ${cantPropios} cliente${cantPropios !== 1 ? 's' : ''} de la plantilla.`)
+      setTimeout(() => setAvisoPlantilla(''), cantAusentes > 0 ? 6000 : 4000)
     } catch (e) {
       setAvisoPlantilla('Error al cargar la plantilla. Probá de nuevo.')
     }

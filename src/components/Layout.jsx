@@ -21,6 +21,7 @@ export default function Layout() {
     { path: '/pallets', label: '📦 Pallets a desarmar', roles: ['admin', 'operador', 'coordinador'] },
     { path: '/retiros-precargados', label: '📋 Retiros precargados', roles: ['admin', 'operador', 'coordinador'] },
     { path: '/informes', label: '📊 Informes', roles: ['admin', 'operador', 'coordinador'] },
+    { path: '/vehiculos', label: '🚐 Camionetas', roles: ['admin', 'coordinador', 'mantenimiento'] },
     { path: '/admin', label: '⚙️ Admin', roles: ['admin'] },
     { path: '/configuracion', label: '🔧 Configuración' },
   ].filter(item => !item.roles || item.roles.includes(usuario?.rol))

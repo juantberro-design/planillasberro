@@ -4,6 +4,11 @@ import { collection, getDocs, getDoc, addDoc, deleteDoc, updateDoc, doc, onSnaps
 import { db } from '../firebase'
 import { hoyLocal, fechaLocal } from '../utils/fechas'
 import { useAuth } from '../hooks/useAuth.jsx'
+import AvisoCamionetas from '../components/AvisoCamionetas.jsx'
+import { useAsignacion } from '../hooks/useAsignacion'
+import { useRecepcion } from '../hooks/useRecepcion'
+import RecepcionCamioneta, { CamionetaDelChofer } from '../components/RecepcionCamioneta.jsx'
+import { filaSinCamioneta } from '../utils/vehiculos'
 
 function hoy() {
   return hoyLocal()
@@ -181,6 +186,8 @@ export default function Dashboard() {
   const [nombrePuntual, setNombrePuntual] = useState('')
   const [guardandoPuntual, setGuardandoPuntual] = useState(false)
   const [avisoPuntual, setAvisoPuntual] = useState('')
+  // La mayoría de los puntuales vienen con su vehículo: por eso arranca marcado
+  const [puntualPropio, setPuntualPropio] = useState(true)
 
   // Ausencias
   const [ausencias, setAusencias] = useState([])
@@ -194,6 +201,10 @@ export default function Dashboard() {
   const esOficina = ['admin', 'operador', 'coordinador'].includes(usuario.rol)
   // Solo el admin y el coordinador pueden marcar o quitar ausencias
   const puedeMarcarAusencias = ['admin', 'coordinador'].includes(usuario.rol)
+  // Camionetas del turno: para marcar en la tarjeta a los choferes que no tienen ninguna
+  const asign = useAsignacion(fecha, turno, esOficina)
+  // Chofer: su camioneta de ahora y si ya contestó "¿Está todo bien?" hoy
+  const rec = useRecepcion(usuario, esChofer)
 
   // Ausencias en tiempo real (solo la oficina las necesita; el chofer siempre ve su tarjeta)
   useEffect(() => {
@@ -350,6 +361,7 @@ export default function Dashboard() {
   function abrirAgregarPuntual() {
     setNombrePuntual('')
     setAvisoPuntual('')
+    setPuntualPropio(true)
     setMostrarAgregarPuntual(true)
   }
 
@@ -368,6 +380,7 @@ export default function Dashboard() {
         activo: false, // así no aparece como chofer fijo en ninguna lista
         fecha,
         turno,
+        vehiculoPropio: puntualPropio, // si viene con su vehículo, no hace falta asignarle camioneta
         creadoAt: Date.now(),
         creadoPor: usuario.nombre || usuario.email || ''
       })
@@ -437,9 +450,14 @@ export default function Dashboard() {
   }
 
   if (cargando) return <div style={{ padding: '40px', textAlign: 'center', color: '#888' }}>Cargando...</div>
+  // El chofer primero tiene que contestar si su camioneta está bien (una vez por día por camioneta)
+  if (esChofer && !rec.cargado) return <div style={{ padding: '40px', textAlign: 'center', color: '#888' }}>Cargando...</div>
+  if (esChofer && rec.pendiente) return <RecepcionCamioneta rec={rec} usuario={usuario} />
 
   return (
     <div style={{ padding: 'clamp(12px, 4vw, 24px)', maxWidth: '900px', margin: '0 auto' }}>
+      {usuario.rol === 'admin' && <AvisoCamionetas />}
+      {esChofer && <CamionetaDelChofer rec={rec} usuario={usuario} />}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
         <h2 style={{ margin: 0, color: '#1a1a2e' }}>Planillas del día</h2>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -636,6 +654,13 @@ export default function Dashboard() {
                     </span>
                   </div>
                 )}
+                {esOficina && asign.cargado && !asign.congelado && asign.filaDe(chofer.id) && filaSinCamioneta(asign.filaDe(chofer.id)) && (
+                  <div style={{ marginBottom: '6px' }}>
+                    <span style={{ background: '#c53030', color: 'white', fontSize: '12px', fontWeight: '700', padding: '3px 9px', borderRadius: '10px' }}>
+                      ⚠️ Sin camioneta
+                    </span>
+                  </div>
+                )}
                 <div style={{ fontWeight: '600', color: colores.texto }}>{chofer.nombre}</div>
                 <div style={{ fontSize: '13px', color: colores.textoSuave, marginTop: '4px' }}>{fecha}{esOficina ? ` · ${turno}` : ''}</div>
               </div>
@@ -676,6 +701,16 @@ export default function Dashboard() {
               placeholder="Ej: Juan Pérez"
               style={{ width: '100%', padding: '11px 12px', border: '1px solid #ddd', borderRadius: '8px', fontSize: '16px', boxSizing: 'border-box' }}
             />
+            <label style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '14px', fontSize: '15px', cursor: 'pointer' }}>
+              <input type="checkbox" checked={puntualPropio} onChange={e => setPuntualPropio(e.target.checked)}
+                style={{ width: '20px', height: '20px' }} />
+              Viene con vehículo propio
+            </label>
+            {!puntualPropio && (
+              <p style={{ margin: '6px 0 0', fontSize: '13px', color: '#975a16' }}>
+                Alvaro o Juan le tienen que asignar una camioneta antes de cargarle retiros.
+              </p>
+            )}
             {avisoPuntual && <p style={{ margin: '8px 0 0', fontSize: '13px', color: '#e53e3e' }}>{avisoPuntual}</p>}
             <div style={{ display: 'flex', gap: '10px', marginTop: '18px' }}>
               <button onClick={() => setMostrarAgregarPuntual(false)} disabled={guardandoPuntual}

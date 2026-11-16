@@ -4,7 +4,7 @@ import { db } from '../firebase'
 import { hoyLocal } from '../utils/fechas'
 import { useAuth } from '../hooks/useAuth.jsx'
 
-const ROLES = ['admin', 'operador', 'coordinador', 'chofer', 'supervisor']
+const ROLES = ['admin', 'operador', 'coordinador', 'chofer', 'supervisor', 'mantenimiento']
 
 const inputStyle = {
   width: '100%',
@@ -255,7 +255,7 @@ export default function Admin() {
     await setDoc(doc(db, 'config', 'pallets'), { clientes: nuevos })
   }
 
-  const rolColor = { admin: '#e53e3e', operador: '#3182ce', coordinador: '#dd6b20', chofer: '#38a169', supervisor: '#805ad5' }
+  const rolColor = { admin: '#e53e3e', operador: '#3182ce', coordinador: '#dd6b20', chofer: '#38a169', supervisor: '#805ad5', mantenimiento: '#2c7a7b' }
 
   async function buscarHistorial() {
     if (!histChoferId) return

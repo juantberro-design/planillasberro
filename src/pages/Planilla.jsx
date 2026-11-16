@@ -5,6 +5,14 @@ import { db } from '../firebase'
 import { hoyLocal } from '../utils/fechas'
 import { useAuth } from '../hooks/useAuth.jsx'
 import SelectorCliente from '../components/SelectorCliente.jsx'
+import CamionetaDelTurno from '../components/CamionetaDelTurno.jsx'
+import { useAsignacion } from '../hooks/useAsignacion'
+import { useRecepcion } from '../hooks/useRecepcion'
+import RecepcionCamioneta from '../components/RecepcionCamioneta.jsx'
+import { filaSinCamioneta } from '../utils/vehiculos'
+
+// Cómo se ven Levantes y Clientes puntuales mientras el chofer no tiene camioneta: grises y sin poder tocarse
+const BLOQUEADO = { opacity: 0.4, pointerEvents: 'none', userSelect: 'none' }
 
 function calcularDiff(anterior, nuevo) {
   const cambios = []
@@ -215,6 +223,12 @@ export default function Planilla() {
     searchParams.get('turno') === 'mañana' ? 'mañana' :
     turnoActual()
   )
+  // Camioneta del chofer en este turno (solo la oficina lo necesita; el chofer no gasta lecturas en esto).
+  // Mientras no tenga camioneta, la oficina no puede cargarle retiros (salvo turnos que ya pasaron).
+  const asign = useAsignacion(fecha, turno, esOficina)
+  const bloqueado = esOficina && asign.cargado && !asign.congelado && filaSinCamioneta(asign.filaDe(choferId))
+  // Chofer: antes de ver la planilla de hoy tiene que contestar si su camioneta está bien
+  const rec = useRecepcion(usuario, esChofer)
   const [cargando, setCargando] = useState(true)
   const [okStates, setOkStates] = useState([false])
   const [remitoOkStates, setRemitoOkStates] = useState([false])
@@ -663,6 +677,8 @@ export default function Planilla() {
   }
 
   if (cargando || !snapshot) return <div style={{ padding:'40px', textAlign:'center' }}>Cargando...</div>
+  if (esChofer && fecha === hoy() && !rec.cargado) return <div style={{ padding:'40px', textAlign:'center' }}>Cargando...</div>
+  if (esChofer && fecha === hoy() && rec.pendiente) return <RecepcionCamioneta rec={rec} usuario={usuario} />
 
   const { entregas, levantes, clientesPuntuales, devoluciones } = snapshot
   const levantesChofer = levantes.map((l,i)=>({...l,_i:i})).filter(l=>l.cliente)
@@ -811,6 +827,8 @@ export default function Planilla() {
         </div>
       </div>
 
+      {esOficina && <CamionetaDelTurno asign={asign} fecha={fecha} turno={turno} choferId={choferId} usuario={usuario} />}
+
       {/* ENTREGAS oficina */}
       {esOficina && (
         <div style={{ background:'white', borderRadius:'12px', padding:'20px', marginBottom:'20px', boxShadow:'0 1px 4px rgba(0,0,0,0.06)' }}>
@@ -939,7 +957,7 @@ export default function Planilla() {
 
 
       {/* LEVANTES */}
-      <div style={{ background:'white', borderRadius:'12px', padding:'20px', marginBottom:'20px', boxShadow:'0 1px 4px rgba(0,0,0,0.06)' }}>
+      <div style={{ background:'white', borderRadius:'12px', padding:'20px', marginBottom:'20px', boxShadow:'0 1px 4px rgba(0,0,0,0.06)', ...(bloqueado ? BLOQUEADO : {}) }}>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'12px', flexWrap:'wrap', gap:'10px' }}>
           <h3 style={{ margin:0, color:'#1a1a2e' }}>Levantes</h3>
           {esOficina && (
@@ -973,7 +991,7 @@ export default function Planilla() {
 
       {/* CLIENTES PUNTUALES oficina */}
       {esOficina && (
-        <div style={{ background:'white', borderRadius:'12px', padding:'20px', marginBottom:'20px', boxShadow:'0 1px 4px rgba(0,0,0,0.06)', overflowX:'auto' }}>
+        <div style={{ background:'white', borderRadius:'12px', padding:'20px', marginBottom:'20px', boxShadow:'0 1px 4px rgba(0,0,0,0.06)', overflowX:'auto', ...(bloqueado ? BLOQUEADO : {}) }}>
           <h3 style={{ margin:'0 0 16px', color:'#1a1a2e' }}>Clientes puntuales</h3>
           <div style={{ display:'grid', gridTemplateColumns:grillaRetiros, gap:'6px', marginBottom:'4px' }}>
             {titulosRetiros.map(h=><label key={h} style={LS}>{h}</label>)}

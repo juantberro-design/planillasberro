@@ -11,6 +11,7 @@ import RetirosTurno from './pages/RetirosTurno'
 import RetirosPrecargados from './pages/RetirosPrecargados'
 import Configuracion from './pages/Configuracion'
 import Seguimiento from './pages/Seguimiento'
+import Vehiculos from './pages/Vehiculos'
 import Layout from './components/Layout'
 
 function PrivateRoute({ children, roles }) {
@@ -25,6 +26,7 @@ function PrivateRoute({ children, roles }) {
 function Inicio() {
   const { usuario } = useAuth()
   if (usuario?.rol === 'supervisor') return <Navigate to="/seguimiento" replace />
+  if (usuario?.rol === 'mantenimiento') return <Navigate to="/vehiculos" replace />
   return <Dashboard />
 }
 
@@ -77,6 +79,11 @@ export default function App() {
           <Route path="admin" element={
             <PrivateRoute roles={['admin']}>
               <Admin />
+            </PrivateRoute>
+          } />
+          <Route path="vehiculos" element={
+            <PrivateRoute roles={['admin','coordinador','mantenimiento']}>
+              <Vehiculos />
             </PrivateRoute>
           } />
           <Route path="configuracion" element={<Configuracion />} />

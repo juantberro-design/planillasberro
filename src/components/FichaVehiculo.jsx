@@ -94,24 +94,36 @@ export default function FichaVehiculo({ vehiculo, reportes, usuario, choferEnUso
     setGuardando(false)
   }
 
-  async function resolver(r, estado) {
-    const pregunta = estado === 'arreglado'
-      ? `¿Marcar como arreglado?\n\n"${r.descripcion}"`
-      : `¿Marcar que NO se va a arreglar?\nQueda registrado para que no lo vuelvan a reportar.\n\n"${r.descripcion}"`
-    if (!window.confirm(pregunta)) return
-    try {
-      await updateDoc(doc(db, 'reportesVehiculos', r.id), {
-        estado, resueltoAt: Date.now(), resueltoPor: usuario.nombre || '', resueltoFecha: hoyLocal()
-      })
-    } catch {
-      window.alert('No se pudo guardar. Revisá la conexión y probá de nuevo.')
-    }
+  // Al marcar una falla o un daño como resuelto, se abre un cuadro para anotar qué era y cómo se arregló
+  // (o por qué no se arregla). El comentario es opcional y queda en el historial.
+  const [resolviendo, setResolviendo] = useState(null) // { id, estado }
+  const [comentario, setComentario] = useState('')
+
+  function abrirResolver(r, estado) {
+    setResolviendo({ id: r.id, estado })
+    setComentario('')
+  }
+
+  function guardarResolucion(r) {
+    const { estado } = resolviendo
+    setResolviendo(null) // se cierra enseguida, sin esperar a que el servidor confirme
+    updateDoc(doc(db, 'reportesVehiculos', r.id), {
+      estado, resueltoAt: Date.now(), resueltoPor: usuario.nombre || '', resueltoFecha: hoyLocal(),
+      comentarioResolucion: comentario.trim()
+    }).catch(() => window.alert('No se pudo guardar. Revisá la conexión y probá de nuevo.'))
+  }
+
+  // Textos del cuadro de comentario según qué se está marcando
+  function textosResolucion(tipo, estado) {
+    if (estado === 'no_se_arregla') return { pregunta: '¿Por qué no se arregla?', ejemplo: 'Ej: es un rayón chico, no vale la pena', boton: 'Guardar: no se arregla' }
+    if (tipo === 'falla') return { pregunta: '¿Qué era y cómo se arregló?', ejemplo: 'Ej: era el fusible de la luz, se cambió', boton: '✅ Guardar como arreglada' }
+    return { pregunta: '¿Cómo se arregló?', ejemplo: 'Ej: se llevó a chapa y pintura', boton: '✅ Guardar como arreglado' }
   }
 
   async function reabrir(r) {
     if (!window.confirm(`¿Volver a marcar como pendiente?\n\n"${r.descripcion}"`)) return
     try {
-      await updateDoc(doc(db, 'reportesVehiculos', r.id), { estado: 'pendiente', resueltoAt: null, resueltoPor: '', resueltoFecha: '' })
+      await updateDoc(doc(db, 'reportesVehiculos', r.id), { estado: 'pendiente', resueltoAt: null, resueltoPor: '', resueltoFecha: '', comentarioResolucion: '' })
     } catch {
       window.alert('No se pudo guardar. Revisá la conexión y probá de nuevo.')
     }
@@ -227,18 +239,36 @@ export default function FichaVehiculo({ vehiculo, reportes, usuario, choferEnUso
               <div key={r.id} style={{ background: 'white', borderLeft: `6px solid ${t.color}`, borderRadius: '10px', padding: '14px', marginBottom: '10px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
                 <div style={{ fontSize: '17px', whiteSpace: 'pre-wrap' }}>{r.descripcion}</div>
                 <div style={{ fontSize: '14px', color: '#777', marginTop: '6px' }}>{quien(r)}</div>
-                {puedeResolver && (
+                {puedeResolver && resolviendo?.id !== r.id && (
                   <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
-                    <button onClick={() => resolver(r, 'arreglado')} style={{ ...BTN, flex: 1, background: '#38a169', color: 'white' }}>
+                    <button onClick={() => abrirResolver(r, 'arreglado')} style={{ ...BTN, flex: 1, background: '#38a169', color: 'white' }}>
                       ✅ {tipo === 'falla' ? 'Arreglada' : 'Arreglado'}
                     </button>
                     {tipo === 'daño' && (
-                      <button onClick={() => resolver(r, 'no_se_arregla')} style={{ ...BTN, flex: 1, background: '#e2e8f0', color: '#333' }}>
+                      <button onClick={() => abrirResolver(r, 'no_se_arregla')} style={{ ...BTN, flex: 1, background: '#e2e8f0', color: '#333' }}>
                         No se arregla
                       </button>
                     )}
                   </div>
                 )}
+                {resolviendo?.id === r.id && (() => {
+                  const txt = textosResolucion(tipo, resolviendo.estado)
+                  return (
+                    <div style={{ marginTop: '12px', background: '#f7fafc', borderRadius: '10px', padding: '12px' }}>
+                      <div style={{ fontSize: '17px', fontWeight: '700' }}>
+                        {txt.pregunta} <span style={{ fontWeight: '400', color: '#888', fontSize: '15px' }}>(opcional)</span>
+                      </div>
+                      <textarea autoFocus rows={3} value={comentario} onChange={e => setComentario(e.target.value)} placeholder={txt.ejemplo}
+                        style={{ width: '100%', padding: '12px', border: '1px solid #ccc', borderRadius: '10px', fontSize: '17px', boxSizing: 'border-box', fontFamily: 'inherit', marginTop: '8px' }} />
+                      <button onClick={() => guardarResolucion(r)} style={{ ...BTN, width: '100%', marginTop: '10px', background: resolviendo.estado === 'arreglado' ? '#38a169' : '#4a5568', color: 'white' }}>
+                        {txt.boton}
+                      </button>
+                      <button onClick={() => setResolviendo(null)} style={{ ...BTN, width: '100%', marginTop: '8px', background: '#e2e8f0', color: '#333' }}>
+                        Cancelar
+                      </button>
+                    </div>
+                  )
+                })()}
                 {esAdmin && (
                   <button onClick={() => borrar('reportesVehiculos', r.id, `¿Borrar ${tipo === 'falla' ? 'esta falla' : 'este daño'}?\n\n"${r.descripcion}"`)} style={BTN_BORRAR}>
                     🗑 Borrar
@@ -280,6 +310,7 @@ export default function FichaVehiculo({ vehiculo, reportes, usuario, choferEnUso
                 {r.tipo === 'falla' ? 'Falla' : 'Daño'} · {r.estado === 'arreglado' ? '✅ Arreglado' : 'No se arregla'} el {fechaCorta(r.resueltoFecha)} por {r.resueltoPor}
               </div>
               <div style={{ marginTop: '4px', whiteSpace: 'pre-wrap' }}>{r.descripcion}</div>
+              {r.comentarioResolucion && <div style={{ marginTop: '4px', color: '#2d3748' }}>💬 {r.comentarioResolucion}</div>}
               <div style={{ color: '#777', marginTop: '4px' }}>Reportado: {quien(r)}</div>
               <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
                 {puedeResolver && (

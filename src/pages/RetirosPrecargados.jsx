@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore'
 import { db } from '../firebase'
 import SelectorCliente from '../components/SelectorCliente.jsx'
+import { diasATexto, textoADias } from '../utils/precargados'
 
 // Días de la semana para los clientes de la plantilla (números como Date.getDay(): 1 = lunes ... 6 = sábado)
 const DIAS_SEMANA = [[1, 'L'], [2, 'M'], [3, 'X'], [4, 'J'], [5, 'V'], [6, 'S']]
@@ -50,10 +51,11 @@ export default function RetirosPrecargados() {
     const snap = await getDoc(ref)
     if (snap.exists()) {
       const lista = snap.data().clientes || []
-      // "dias" va aparte y en el mismo orden que "clientes". Las plantillas viejas no lo tienen: todos los días.
+      // "dias" va aparte y en el mismo orden que "clientes", como texto ("135" = L, X, V).
+      // Las plantillas viejas no lo tienen: todos los días.
       const listaDias = snap.data().dias || []
       const conMinimo = [...lista]
-      const diasConMinimo = lista.map((_, i) => Array.isArray(listaDias[i]) ? [...listaDias[i]] : [...TODOS_LOS_DIAS])
+      const diasConMinimo = lista.map((_, i) => textoADias(listaDias[i]) || [...TODOS_LOS_DIAS])
       // Asegurar al menos 10 filas, agregando vacías si faltan
       while (conMinimo.length < 10) { conMinimo.push(''); diasConMinimo.push([...TODOS_LOS_DIAS]) }
       setClientes(conMinimo)
@@ -99,15 +101,20 @@ export default function RetirosPrecargados() {
     }
     setGuardando(true)
     const filas = clientes.map((c, i) => ({ cliente: c, dias: dias[i] })).filter(f => f.cliente.trim())
-    await setDoc(doc(db, 'retirosPrecargados', `${choferId}_${turno}`), {
-      choferId,
-      turno,
-      clientes: filas.map(f => f.cliente),
-      dias: filas.map(f => f.dias)
-    })
+    try {
+      await setDoc(doc(db, 'retirosPrecargados', `${choferId}_${turno}`), {
+        choferId,
+        turno,
+        clientes: filas.map(f => f.cliente),
+        // Como texto: Firebase no acepta una lista dentro de otra lista
+        dias: filas.map(f => diasATexto(f.dias))
+      })
+      setGuardado(true)
+      setTimeout(() => setGuardado(false), 2500)
+    } catch {
+      window.alert('No se pudo guardar la plantilla. Revisá la conexión y probá de nuevo.')
+    }
     setGuardando(false)
-    setGuardado(true)
-    setTimeout(() => setGuardado(false), 2500)
   }
 
   const choferNombre = choferes.find(c => c.id === choferId)?.nombre || ''

@@ -10,6 +10,7 @@ import { useAsignacion } from '../hooks/useAsignacion'
 import { useRecepcion } from '../hooks/useRecepcion'
 import RecepcionCamioneta from '../components/RecepcionCamioneta.jsx'
 import { filaSinCamioneta } from '../utils/vehiculos'
+import { textoADias } from '../utils/precargados'
 
 // Cómo se ven Levantes y Clientes puntuales mientras el chofer no tiene camioneta: grises y sin poder tocarse
 const BLOQUEADO = { opacity: 0.4, pointerEvents: 'none', userSelect: 'none' }
@@ -547,8 +548,8 @@ export default function Planilla() {
     let salteados = 0
     lista.forEach((c, i) => {
       if (!c || !c.trim()) return
-      const diasCliente = listaDias[i]
-      const va = dia === 0 || !Array.isArray(diasCliente) || diasCliente.includes(dia)
+      const diasCliente = textoADias(listaDias[i]) // null = todos los días (plantillas viejas)
+      const va = dia === 0 || !diasCliente || diasCliente.includes(dia)
       if (va) clientes.push(c)
       else salteados++
     })

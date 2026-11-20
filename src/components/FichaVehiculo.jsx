@@ -70,6 +70,7 @@ export default function FichaVehiculo({ vehiculo, reportes, usuario, choferEnUso
     setAviso('')
     try {
       await addDoc(collection(db, 'reportesVehiculos'), {
+        origen: 'ficha',
         vehiculoId: vehiculo.id,
         tipo: nuevoTipo,
         descripcion: texto,

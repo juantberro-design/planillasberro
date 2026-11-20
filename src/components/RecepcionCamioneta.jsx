@@ -40,8 +40,10 @@ function aclaracionParaChofer(rec) {
   return ''
 }
 
-function datosReporte(rec, usuario, tipo, texto) {
+// origen: 'recepcion' (al recibir la camioneta) o 'ruta' (durante el día): se muestra en la alerta de la oficina
+function datosReporte(rec, usuario, tipo, texto, origen) {
   return {
+    origen,
     vehiculoId: rec.vehiculo.id,
     tipo,
     descripcion: texto,
@@ -128,7 +130,7 @@ export default function RecepcionCamioneta({ rec, usuario }) {
       creadoAt: Date.now(),
       uid: usuario.uid
     })
-    if (tipo) lote.set(doc(collection(db, 'reportesVehiculos')), datosReporte(rec, usuario, tipo, texto))
+    if (tipo) lote.set(doc(collection(db, 'reportesVehiculos')), datosReporte(rec, usuario, tipo, texto, 'recepcion'))
     // No se espera al servidor: en pantalla ya queda contestado, y con mala señal se sube solo después
     lote.commit().catch(() => window.alert('No se pudo guardar. Revisá la conexión y contestá de nuevo.'))
   }
@@ -184,7 +186,7 @@ export function CamionetaDelChofer({ rec, usuario }) {
   }
 
   function enviar(tipo, texto) {
-    addDoc(collection(db, 'reportesVehiculos'), datosReporte(rec, usuario, tipo, texto))
+    addDoc(collection(db, 'reportesVehiculos'), datosReporte(rec, usuario, tipo, texto, 'ruta'))
       .catch(() => window.alert('No se pudo enviar. Revisá la conexión y probá de nuevo.'))
     setReportando(false)
     setEnviado(tipo === 'daño' ? 'Listo, se avisó del daño.' : 'Listo, se avisó de la falla.')

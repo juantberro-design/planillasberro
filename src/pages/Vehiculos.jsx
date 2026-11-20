@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc, deleteField, query, where } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useAuth } from '../hooks/useAuth.jsx'
@@ -7,6 +8,7 @@ import { hoyLocal } from '../utils/fechas'
 import { turnoActual, fechaCorta, nombreVehiculo, enTallerEnTurno, calcularAsignacion, PROPIO, filaSinCamioneta, textoFila, estadoControl, detalleItems } from '../utils/vehiculos'
 import FichaVehiculo from '../components/FichaVehiculo.jsx'
 import ControlVehiculo from '../components/ControlVehiculo.jsx'
+import AlertaReportes from '../components/AlertaReportes.jsx'
 
 // Pantalla de camionetas (pensada para el celular: tarjetas y botones grandes).
 // Dos pestañas: "Hoy" (quién maneja qué en cada turno) y "Camionetas" (la lista).
@@ -67,6 +69,16 @@ export default function Vehiculos() {
   const [controlandoId, setControlandoId] = useState(null) // camioneta a la que se le está haciendo el control
   const [pestania, setPestaniaState] = useState(() => leerPestania(usuario.rol))
   const [fichaId, setFichaId] = useState(null)
+  // Si se llega desde la alerta de Planillas ("Ver"), se abre directo la ficha de esa camioneta
+  const [params, setParams] = useSearchParams()
+  useEffect(() => {
+    const id = params.get('ficha')
+    if (id) {
+      setFichaId(id)
+      setParams({}, { replace: true })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const [mensaje, setMensaje] = useState('')
 
   // Formulario de camioneta: null = cerrado, 'nuevo' = agregando, o el id de la camioneta que se edita
@@ -133,12 +145,7 @@ export default function Vehiculos() {
   const esTurnoDeAhora = fecha === hoyLocal() && turno === turnoActual()
 
   // ── Avisos ──
-  const avisosReportes = reportes
-    .filter(r => r.estado === 'pendiente' && (
-      (esAdmin && r.tipo === 'daño' && !r.vistoAdmin) ||
-      (esMant && !r.vistoMant)
-    ))
-    .sort((a, b) => (b.creadoAt || 0) - (a.creadoAt || 0))
+  // (Las fallas y daños nuevos se avisan con la ventana de AlertaReportes.jsx)
   const avisosTaller = esMant ? lista.filter(v => v.enTaller && v.tallerVisto === false) : []
   // Controles con algo en "Mal" que Juan todavía no vio
   const avisosControles = esAdmin ? controles.filter(c => c.hayMal && !c.vistoAdmin) : []
@@ -146,13 +153,6 @@ export default function Vehiculos() {
   const faltanControl = lista.filter(v => estadoControl(controlesDe(v.id)[0], v).falta)
   const sinCamioneta = !congelado ? filas.filter(filaSinCamioneta) : []
 
-  async function marcarVistoReporte(r) {
-    try {
-      await updateDoc(doc(db, 'reportesVehiculos', r.id), esAdmin ? { vistoAdmin: true } : { vistoMant: true })
-    } catch {
-      window.alert('No se pudo guardar. Revisá la conexión y probá de nuevo.')
-    }
-  }
   async function marcarVistoControl(c) {
     try {
       await updateDoc(doc(db, 'controlesVehiculos', c.id), { vistoAdmin: true })
@@ -425,8 +425,11 @@ export default function Vehiculos() {
         </div>
       )}
 
+      {/* Ventana de alerta: fallas y daños nuevos que este usuario todavía no vio */}
+      {puedeControlar && <AlertaReportes usuario={usuario} onVer={id => { setPestania('camionetas'); setFichaId(id) }} />}
+
       {/* ── AVISOS ── */}
-      {(avisosTaller.length > 0 || avisosReportes.length > 0 || avisosControles.length > 0) && (
+      {(avisosTaller.length > 0 || avisosControles.length > 0) && (
         <div style={{ ...CAJA, background: '#fffaf0', border: '2px solid #f6ad55' }}>
           <div style={{ fontSize: '19px', fontWeight: '700', marginBottom: '10px' }}>🔔 Avisos nuevos</div>
           {avisosTaller.map(v => (
@@ -447,20 +450,6 @@ export default function Vehiculos() {
               <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
                 <button onClick={() => setFichaId(c.vehiculoId)} style={{ ...BTN, flex: 1, background: '#dd6b20', color: 'white' }}>Ver</button>
                 <button onClick={() => marcarVistoControl(c)} style={{ ...BTN, flex: 1, background: '#e2e8f0', color: '#333' }}>Visto</button>
-              </div>
-            </div>
-          ))}
-          {avisosReportes.map(r => (
-            <div key={r.id} style={{ borderTop: '1px solid #fbd38d', padding: '12px 0' }}>
-              <div style={{ fontSize: '17px' }}>
-                {r.tipo === 'daño' ? '💥 Daño' : '⚠️ Falla'} en <b>{nombreVehiculo(vehiculoPorId(r.vehiculoId))}</b>: {r.descripcion}
-              </div>
-              <div style={{ fontSize: '14px', color: '#777', marginTop: '4px' }}>
-                {r.creadoPor} · {fechaCorta(r.fecha)} {r.turno}{r.choferEnUso ? ` · la manejaba ${r.choferEnUso}` : ''}
-              </div>
-              <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                <button onClick={() => setFichaId(r.vehiculoId)} style={{ ...BTN, flex: 1, background: '#dd6b20', color: 'white' }}>Ver</button>
-                <button onClick={() => marcarVistoReporte(r)} style={{ ...BTN, flex: 1, background: '#e2e8f0', color: '#333' }}>Visto</button>
               </div>
             </div>
           ))}

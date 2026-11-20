@@ -87,6 +87,42 @@ export function estadoControl(ultimo, vehiculo) {
   return { texto, falta: vencido && !vehiculo?.enTaller, vencido }
 }
 
+// ── Alertas de fallas y daños nuevos ──
+// Cada persona (Juan, Alvaro, Gustavo) marca por su cuenta lo que ya vio: se guarda en "vistoPor"
+// ({ uid: cuándo lo vio }). Lo reportado antes de esta fecha se rige por las marcas viejas
+// (vistoAdmin para Juan, vistoMant para Gustavo), así no aparece de golpe todo lo viejo.
+export const INICIO_AVISOS_POR_PERSONA = Date.UTC(2026, 10, 18, 3, 0) // 18/11/2026 00:00 en Uruguay
+const ROLES_CON_ALERTA = ['admin', 'coordinador', 'mantenimiento']
+
+// ¿Este usuario todavía no vio esta falla o daño pendiente?
+export function reporteSinVer(r, usuario) {
+  if (!usuario || !ROLES_CON_ALERTA.includes(usuario.rol) || r.estado !== 'pendiente') return false
+  if (r.creadoPorUid && r.creadoPorUid === usuario.uid) return false // lo reportó él mismo
+  if (r.vistoPor && r.vistoPor[usuario.uid]) return false
+  if ((r.creadoAt || 0) < INICIO_AVISOS_POR_PERSONA) {
+    if (usuario.rol === 'admin') return r.tipo === 'daño' && !r.vistoAdmin
+    if (usuario.rol === 'mantenimiento') return !r.vistoMant
+    return false
+  }
+  return true
+}
+
+// Lo que hay que guardar para marcar una falla o daño como visto por este usuario
+export function datosVisto(usuario) {
+  const datos = { [`vistoPor.${usuario.uid}`]: Date.now() }
+  if (usuario.rol === 'admin') datos.vistoAdmin = true
+  if (usuario.rol === 'mantenimiento') datos.vistoMant = true
+  return datos
+}
+
+// De dónde vino el reporte, para mostrarlo en la alerta
+export function textoOrigen(r) {
+  if (r.origen === 'recepcion') return 'al recibir la camioneta'
+  if (r.origen === 'ruta') return 'durante el día'
+  if (r.origen === 'control') return 'en el control quincenal'
+  return ''
+}
+
 // Nombre corto para mostrar: "Camioneta 4" o "Backup"
 export function nombreVehiculo(v) {
   if (!v) return 'Sin camioneta'

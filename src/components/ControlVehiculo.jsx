@@ -81,6 +81,7 @@ export default function ControlVehiculo({ vehiculo, usuario, choferEnUso, onList
       vistoAdmin: !hayMal || usuario.rol === 'admin'
     })
     const reporte = (tipo, descripcion) => lote.set(doc(collection(db, 'reportesVehiculos')), {
+      origen: 'control',
       vehiculoId: vehiculo.id,
       tipo,
       descripcion: `${descripcion} (encontrado en el control quincenal)`,

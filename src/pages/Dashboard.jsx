@@ -5,10 +5,13 @@ import { db } from '../firebase'
 import { hoyLocal, fechaLocal } from '../utils/fechas'
 import { useAuth } from '../hooks/useAuth.jsx'
 import AvisoCamionetas from '../components/AvisoCamionetas.jsx'
+import AlertaReportes from '../components/AlertaReportes.jsx'
 import { useAsignacion } from '../hooks/useAsignacion'
 import { useRecepcion } from '../hooks/useRecepcion'
 import RecepcionCamioneta, { CamionetaDelChofer } from '../components/RecepcionCamioneta.jsx'
 import { filaSinCamioneta } from '../utils/vehiculos'
+import { useGps } from '../hooks/useGps'
+import { textoUnidad, cuandoTexto } from '../utils/gps'
 
 function hoy() {
   return hoyLocal()
@@ -205,6 +208,23 @@ export default function Dashboard() {
   const asign = useAsignacion(fecha, turno, esOficina)
   // Chofer: su camioneta de ahora y si ya contestó "¿Está todo bien?" hoy
   const rec = useRecepcion(usuario, esChofer)
+
+  // GPS: dónde está AHORA la camioneta de cada chofer (solo la oficina, mirando el día de hoy).
+  // Se usa la camioneta que el chofer maneja en el turno de ahora, aunque se esté mirando el otro turno.
+  const gps = useGps(esOficina && fecha === hoy())
+  const turnoAhora = turnoActual()
+  const asignAhora = useAsignacion(hoy(), turnoAhora, gps.instalado && turno !== turnoAhora)
+  const asignGps = turno === turnoAhora ? asign : asignAhora
+  function ubicacionDe(choferId) {
+    if (!gps.alDia || !asignGps.cargado) return null
+    const fila = asignGps.filaDe(choferId)
+    const vehiculo = fila?.vehiculoId ? asignGps.vehiculoPorId(fila.vehiculoId) : null
+    if (!vehiculo?.matricula) return null
+    const unidad = gps.unidad(vehiculo.matricula)
+    if (unidad) return textoUnidad(unidad, gps.ahora)
+    if (gps.sinGps(vehiculo.matricula)) return { icono: '📡', texto: 'Sin GPS' }
+    return null
+  }
 
   // Ausencias en tiempo real (solo la oficina las necesita; el chofer siempre ve su tarjeta)
   useEffect(() => {
@@ -457,6 +477,10 @@ export default function Dashboard() {
   return (
     <div style={{ padding: 'clamp(12px, 4vw, 24px)', maxWidth: '900px', margin: '0 auto' }}>
       {usuario.rol === 'admin' && <AvisoCamionetas />}
+      {/* Ventana de alerta de fallas y daños nuevos en camionetas (Juan y Alvaro) */}
+      {['admin', 'coordinador'].includes(usuario.rol) && (
+        <AlertaReportes usuario={usuario} onVer={id => navigate(`/vehiculos?ficha=${id}`)} />
+      )}
       {esChofer && <CamionetaDelChofer rec={rec} usuario={usuario} />}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
         <h2 style={{ margin: 0, color: '#1a1a2e' }}>Planillas del día</h2>
@@ -602,6 +626,21 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* AVISO SI EL GPS DEJÓ DE ACTUALIZARSE — solo oficina, mirando el día de hoy */}
+      {esOficina && gps.atrasado && (
+        <div style={{ background: '#fffaf0', border: '1px solid #fbd38d', borderRadius: '10px', padding: '10px 14px', marginBottom: '14px', fontSize: '13px', color: '#744210', lineHeight: 1.4 }}>
+          📡 {gps.actualizado
+            ? `El GPS no se actualiza desde ${cuandoTexto(gps.actualizado, gps.ahora)}`
+            : 'El GPS todavía no pudo traer datos'}, por eso no se ve dónde está cada camioneta.
+          {usuario.rol === 'admin' && (
+            <>
+              {' '}Si sigue así, avisale a Gabriel que revise el programa «GPS Berro» en el servidor.
+              {gps.error && <div style={{ marginTop: '4px', fontSize: '12px', color: '#975a16' }}>Detalle: {gps.error}</div>}
+            </>
+          )}
+        </div>
+      )}
+
       {/* GRILLA DE CHOFERES */}
       {choferesFiltrados.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '40px', color: '#888' }}>
@@ -616,6 +655,7 @@ export default function Dashboard() {
             // En blanco, los contadores mantienen su color normal (verde si esa parte está completa)
             const colorContador = estado ? colores.texto : null
             const ausencia = esOficina ? ausenciaEnFecha(ausencias, chofer.id, fecha, turno) : null
+            const ubicacion = esOficina ? ubicacionDe(chofer.id) : null
             return (
               <div
                 key={chofer.id}
@@ -663,6 +703,11 @@ export default function Dashboard() {
                 )}
                 <div style={{ fontWeight: '600', color: colores.texto }}>{chofer.nombre}</div>
                 <div style={{ fontSize: '13px', color: colores.textoSuave, marginTop: '4px' }}>{fecha}{esOficina ? ` · ${turno}` : ''}</div>
+                {ubicacion && (
+                  <div style={{ marginTop: '8px', fontSize: '12px', lineHeight: 1.35, fontWeight: '600', color: estado ? colores.texto : '#2d3748' }}>
+                    {ubicacion.icono} {ubicacion.texto}
+                  </div>
+                )}
               </div>
             )
           })}
